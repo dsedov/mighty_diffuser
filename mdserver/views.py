@@ -2,23 +2,100 @@ from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.http import HttpResponse
 from django.http import FileResponse
+import time
+import uuid
 from PIL import Image 
 from .stable import generate, config, load_model
+import json
+import queue
+import threading
+
+
+class RenderQueueItem():
+    def __init__(self, prompt, settings):
+        self.prompt = prompt
+        self.settings = settings 
+        self.images = []
+        self.id = str(uuid.uuid4())
+
+
+class RenderQueue():
+    def __init__(self):
+        print("RQ: Starting render queue")
+        self.rendered_images = {}
+        self.queue = queue.Queue()
+    def post_job(self, job):
+        print("RQ: Received mew job")
+        self.queue.put(job)
+    def grab_job(self):
+        return self.queue.get()
+    def loop(self):
+        print("RQ: Render server started")
+        while(1):
+            job = self.grab_job()
+            print("RQ: Loaded job")
+            job.images = generate(job.settings, f"{job.prompt}", global_model) 
+            self.rendered_images[job.id] = job
+            print("RQ: Processed job")
+
+    def start(self):
+        threading.Thread(target=self.loop, daemon=True).start()
+
+global_queue = RenderQueue()
+global_queue.start()
 
 cfg = config()
-#cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-#cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
+cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
 
-cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
+#cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+#cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
 
 global_model = load_model(cfg.config, cfg.ckpt)
 # Create your views here.
 def sanitize_file_name(name):
-    return name.replace(',','_').lower()
+    return name.replace(',','_').replace(':','_').lower()
 
 @never_cache
-def prompt(request):
+def submit_prompt(request):
+    new_config = config()
+    new_config.config = cfg.config
+    new_config.ckpt = cfg.ckpt
+
+    prompt_value = request.GET['q']
+    try:
+        if 'scale' in request.GET.keys():
+            new_config.scale = int(request.GET['scale'])
+        if 'w' in request.GET.keys():
+            new_config.W = int(request.GET['w']) // 2
+        if 'h' in request.GET.keys():
+            new_config.H = int(request.GET['h']) // 2
+        if 'steps' in request.GET.keys():
+            new_config.ddim_steps = int(request.GET['steps'])
+    except:
+        print("ERROR")
+
+
+    new_render_item = RenderQueueItem(prompt_value, new_config)
+    global_queue.post_job(new_render_item)
+
+    response_data = {}
+    response_data['result'] = 'OK'
+    response_data['id'] = str(new_render_item.id)
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+
+@never_cache
+def check_prompt(request):
+    return None
+
+@never_cache
+def download_prompt(request):
+    return None   
+
+
+
+@never_cache
+def txt2img(request):
     prompt_value = request.GET['q']
     try:
         if 'scale' in request.GET.keys():

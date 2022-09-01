@@ -20,6 +20,12 @@ from mdapp import views as md_views  # This line is new
 from mdserver import views as md_server_views
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('prompt/', md_server_views.prompt),
+
+    path('submit_prompt/', md_server_views.submit_prompt),
+    path('check_prompt/', md_server_views.check_prompt),
+    path('download_prompt/',md_server_views.download_prompt),
+
+    path('txt2img/', md_server_views.txt2img),
+
     path('test', md_views.test_vue),  # This line is new
 ]
