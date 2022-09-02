@@ -17,13 +17,14 @@ class RenderQueueItem():
         self.settings = settings 
         self.images = []
         self.id = str(uuid.uuid4())
-
+        
 
 class RenderQueue():
     def __init__(self):
         print("RQ: Starting render queue")
-        self.rendered_images = {}
+        self.finished_jobs = {}
         self.queue = queue.Queue()
+        self.lock = lock = threading.Lock()
     def post_job(self, job):
         print("RQ: Received mew job")
         self.queue.put(job)
@@ -34,10 +35,20 @@ class RenderQueue():
         while(1):
             job = self.grab_job()
             print("RQ: Loaded job")
-            job.images = generate(job.settings, f"{job.prompt}", global_model) 
-            self.rendered_images[job.id] = job
-            print("RQ: Processed job")
 
+            job.images = generate(job.settings, f"{job.prompt}", global_model) 
+            print(f"RQ: Rendered {len(job.images)} images")
+            self.lock.acquire()
+            self.finished_jobs[job.id] = job
+            self.lock.release()
+            print("RQ: Processed job")
+    def get_job(self, id):
+        self.lock.acquire()
+        job = None
+        if id in self.finished_jobs.keys():
+            job = self.finished_jobs[id]
+        self.lock.release()
+        return job
     def start(self):
         threading.Thread(target=self.loop, daemon=True).start()
 
@@ -72,6 +83,8 @@ def submit_prompt(request):
             new_config.H = int(request.GET['h']) // 2
         if 'steps' in request.GET.keys():
             new_config.ddim_steps = int(request.GET['steps'])
+        if 'samples' in request.GET.keys():
+            new_config.n_samples = int(request.GET['samples'])
     except:
         print("ERROR")
 
@@ -90,9 +103,13 @@ def check_prompt(request):
 
 @never_cache
 def download_prompt(request):
-    return None   
+    id_value = request.GET['id']
+    job = global_queue.get_job(id_value)
 
-
+    response = HttpResponse(content_type='image/png')   
+    response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}.png\""
+    job.images[0].save(response, "PNG")
+    return response
 
 @never_cache
 def txt2img(request):
@@ -121,5 +138,5 @@ def txt2img(request):
     response["file-name"] = f"{sanitize_file_name(prompt_value)}__{cfg.seed}.png"
     response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(prompt_value)}.png\""
 
-    img.save(response, "JPEG")
+    img.save(response, "PNG")
     return response

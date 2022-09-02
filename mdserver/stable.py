@@ -68,7 +68,7 @@ def load_img(opt):
 class config():
 
       def __init__(self):
-        
+        self.safety_filter = True
         self.outdir = 'C:/Users/dsedov/sd/output'
         self.ddim_steps = 20
         self.plms = True
@@ -213,40 +213,23 @@ def generate(opt,prompt, model):
                                                          eta=opt.ddim_eta,
                                                          x_T=start_code)
 
-                        #x_samples = model.decode_first_stage(samples)
-                        #x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+                        if opt.safety_filter:
+                            x_samples_ddim = model.decode_first_stage(samples)
+                            x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                            x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
+                            x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                            x_samples = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                        else:
+                            x_samples = model.decode_first_stage(samples)
+                            x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
-
-
-
-                        x_samples_ddim = model.decode_first_stage(samples)
-                        x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
-                        x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-                        x_samples = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
-
-
-                        if not opt.skip_save:
-                            for x_sample in x_samples:
-                                x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                                images +=[Image.fromarray(x_sample.astype(np.uint8))]
+                        
+                        for x_sample in x_samples:
+                            x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                            images +=[Image.fromarray(x_sample.astype(np.uint8))]
+                            if not opt.skip_save:
                                 Image.fromarray(x_sample.astype(np.uint8)).save(
                                     os.path.join(sample_path, f"{base_count:05}_S{opt.seed}.png"))
                                 base_count += 1
 
-                        if not opt.skip_grid:
-                            all_samples.append(x_samples)
-
-                if not opt.skip_grid:
-                    # additionally, save as grid
-                    grid = torch.stack(all_samples, 0)
-                    grid = rearrange(grid, 'n b c h w -> (n b) c h w')
-                    grid = make_grid(grid, nrow=n_rows)
-
-                    # to image
-                    grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
-                    image = Image.fromarray(grid.astype(np.uint8)).save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
-                    Image.fromarray(grid.astype(np.uint8)).save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
-                    grid_count += 1
-                print(f'Your images are here {outpath}')
                 return images
