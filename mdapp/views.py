@@ -1,5 +1,5 @@
 from django.shortcuts import render
 
 # Create your views here.
-def test_vue(request):
+def index(request):
     return render(request, 'mdapp/test.html')

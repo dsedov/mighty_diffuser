@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.http import HttpResponse
 from django.http import FileResponse
-import time
+import time, random
 import uuid
 from PIL import Image 
 from .stable import generate, config, load_model
@@ -56,11 +56,11 @@ global_queue = RenderQueue()
 global_queue.start()
 
 cfg = config()
-cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
+##cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+##cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
 
-#cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-#cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
+cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
 
 global_model = load_model(cfg.config, cfg.ckpt)
 # Create your views here.
@@ -72,6 +72,8 @@ def submit_prompt(request):
     new_config = config()
     new_config.config = cfg.config
     new_config.ckpt = cfg.ckpt
+    new_config.safety_filter = True
+    new_config.seed = random.randint(0, 2**32)
 
     prompt_value = request.GET['q']
     try:
@@ -85,6 +87,8 @@ def submit_prompt(request):
             new_config.ddim_steps = int(request.GET['steps'])
         if 'samples' in request.GET.keys():
             new_config.n_samples = int(request.GET['samples'])
+        if 'seed' in request.GET.keys():
+            new_config.seed = int(request.GET['seed'])
     except:
         print("ERROR")
 
@@ -94,12 +98,22 @@ def submit_prompt(request):
 
     response_data = {}
     response_data['result'] = 'OK'
+    response_data['seed'] = new_config.seed
     response_data['id'] = str(new_render_item.id)
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @never_cache
 def check_prompt(request):
-    return None
+    id_value = request.GET['id']
+    job = global_queue.get_job(id_value)
+    response_data = {}
+    if job is not None:
+        response_data['result'] = 'OK'
+        response_data['samples'] = len(job.images)
+
+    else:
+        response_data['result'] = 'WAITING'
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @never_cache
 def download_prompt(request):

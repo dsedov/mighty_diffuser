@@ -27,5 +27,5 @@ urlpatterns = [
 
     path('txt2img/', md_server_views.txt2img),
 
-    path('test', md_views.test_vue),  # This line is new
+    path('/', md_views.index),  # This line is new
 ]
