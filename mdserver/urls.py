@@ -26,6 +26,7 @@ urlpatterns = [
     path('download_prompt/',md_server_views.download_prompt),
 
     path('txt2img/', md_server_views.txt2img),
+    path('img2img/', md_server_views.img2img),
 
-    path('/', md_views.index),  # This line is new
+    path('', md_views.index),  # This line is new
 ]

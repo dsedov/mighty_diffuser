@@ -69,10 +69,9 @@ class config():
 
       def __init__(self):
         self.safety_filter = True
-        self.outdir = 'C:/Users/dsedov/sd/output'
+        #self.outdir = 'C:/Users/dsedov/sd/output'
         self.ddim_steps = 20
         self.plms = True
-        self.init_img = None
         self.laion400m = False
         self.seed = 0
         self.config = 'configs/stable-diffusion/v1-inference.yaml'
@@ -91,8 +90,9 @@ class config():
         self.ddim_eta = 0.0
         self.skip_save = False
         self.skip_grid = False
-
+        self.init_img = None
         self.init_img_data = None
+        self.init_img_strength = 0.0
 def load_model(config_path, checkpoint_path):
     config = OmegaConf.load(config_path)
     model = load_model_from_config(config, checkpoint_path)
@@ -131,50 +131,31 @@ def check_safety(x_image):
             print("Found non safe image")
             x_checked_image[i] = load_replacement(x_checked_image[i])
     return x_checked_image, has_nsfw_concept
-def generate(opt,prompt, model):
+def generate(opt, prompt, model):
     device = 'cuda'
     if opt.plms:
         sampler = PLMSSampler(model)
     else:
         sampler = DDIMSampler(model)
     images = []
-    os.makedirs(opt.outdir, exist_ok=True)
-    outpath = opt.outdir
 
     if opt.seed > 0 : seed_everything(opt.seed)
     else :
         opt.seed = random.randint(0, 2**32)
         seed_everything(opt.seed)
 
-    batch_size = opt.n_samples
-    n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
-    if not opt.from_file:
-
-        assert prompt is not None
-        data = [batch_size * [prompt]]
-
-    else:
-        print(f"reading prompts from {opt.from_file}")
-        with open(opt.from_file, "r") as f:
-            data = f.read().splitlines()
-            data = list(chunk(data, batch_size))
-
-    sample_path = os.path.join(outpath, "samples")
-    os.makedirs(sample_path, exist_ok=True)
-    base_count = len(os.listdir(sample_path))
-    grid_count = len(os.listdir(outpath)) - 1
-
-    if opt.init_img != None:
-        assert os.path.isfile(opt.init_img)
+    if opt.init_img != None or opt.init_img_data != None:
+        if opt.init_img_data == None: 
+            assert os.path.isfile(opt.init_img)
         init_image = load_img(opt).to(device)
         init_image = init_image.half()
-        init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
+        init_image = repeat(init_image, '1 ... -> b ...', b=1)
         init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))  # move to latent space
 
         sampler.make_schedule(ddim_num_steps=opt.ddim_steps, ddim_eta=opt.ddim_eta, verbose=False)
 
-        assert 0. <= opt.strength <= 1., 'can only work with strength in [0.0, 1.0]'
-        t_enc = int(opt.strength * opt.ddim_steps)
+        assert 0. <= opt.init_img_strength <= 1., 'can only work with strength in [0.0, 1.0]'
+        t_enc = int(opt.init_img_strength * opt.ddim_steps)
         print(f"target t_enc is {t_enc} steps")
     else:
         start_code = None
@@ -187,49 +168,53 @@ def generate(opt,prompt, model):
             with model.ema_scope():
                 #tic = time.time()
                 all_samples = list()
-                for n in trange(opt.n_iter, desc="Sampling"):
-                    for prompts in tqdm(data, desc="data"):
-                        uc = None
-                        if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
-                        if isinstance(prompts, tuple):
-                            prompts = list(prompts)
-                        c = model.get_learned_conditioning(prompts)
+                uc = None
+                if opt.scale != 1.0:
+                    uc = model.get_learned_conditioning(1 * [""])
 
-                        if opt.init_img != None:
-                            # encode (scaled latent)
-                            z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc]*batch_size).to(device))
-                            # decode it
-                            samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=opt.scale, unconditional_conditioning=uc,)
-                        else:
-                            shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                            samples, _ = sampler.sample(S=opt.ddim_steps,
-                                                         conditioning=c,
-                                                         batch_size=opt.n_samples,
-                                                         shape=shape,
-                                                         verbose=False,
-                                                         unconditional_guidance_scale=opt.scale,
-                                                         unconditional_conditioning=uc,
-                                                         eta=opt.ddim_eta,
-                                                         x_T=start_code)
+                if isinstance(prompt, list):
+                    print("Weighted prompt")
+                    ckl = []
+                    for p in prompt:
+                        ck = model.get_learned_conditioning(p["text"]) * p["weight"]
+                        ckl.append(ck)
+                    c = sum(ckl)
 
-                        if opt.safety_filter:
-                            x_samples_ddim = model.decode_first_stage(samples)
-                            x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                            x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
-                            x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-                            x_samples = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
-                        else:
-                            x_samples = model.decode_first_stage(samples)
-                            x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+                else:   
+                    print("Single prompt") 
+                    c = model.get_learned_conditioning(prompt)
 
-                        
-                        for x_sample in x_samples:
-                            x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                            images +=[Image.fromarray(x_sample.astype(np.uint8))]
-                            if not opt.skip_save:
-                                Image.fromarray(x_sample.astype(np.uint8)).save(
-                                    os.path.join(sample_path, f"{base_count:05}_S{opt.seed}.png"))
-                                base_count += 1
+                if opt.init_img != None or opt.init_img_data != None:
+                    # encode (scaled latent)
+                    z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc]).to(device))
+                    # decode it
+                    samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=opt.scale, unconditional_conditioning=uc,)
+                else:
+                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                    samples, _ = sampler.sample(S=opt.ddim_steps,
+                                                    conditioning=c,
+                                                    batch_size=1,
+                                                    shape=shape,
+                                                    verbose=False,
+                                                    unconditional_guidance_scale=opt.scale,
+                                                    unconditional_conditioning=uc,
+                                                    eta=opt.ddim_eta,
+                                                    x_T=start_code)
+
+                if opt.safety_filter:
+                    x_samples_ddim = model.decode_first_stage(samples)
+                    x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                    x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
+                    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                    x_samples = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                else:
+                    x_samples = model.decode_first_stage(samples)
+                    x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+
+                
+                for x_sample in x_samples:
+                    x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                    images +=[Image.fromarray(x_sample.astype(np.uint8))]
+
 
                 return images

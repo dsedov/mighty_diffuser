@@ -1,5 +1,7 @@
+from xmlrpc.client import Boolean
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 from django.http import FileResponse
 import time, random
@@ -9,7 +11,7 @@ from .stable import generate, config, load_model
 import json
 import queue
 import threading
-
+from PIL import Image, ImageDraw, ImageFilter
 
 class RenderQueueItem():
     def __init__(self, prompt, settings):
@@ -89,6 +91,8 @@ def submit_prompt(request):
             new_config.n_samples = int(request.GET['samples'])
         if 'seed' in request.GET.keys():
             new_config.seed = int(request.GET['seed'])
+        if 'seed' in request.POST.keys():
+            new_config.seed = int(request.POST['seed'])
     except:
         print("ERROR")
 
@@ -125,32 +129,90 @@ def download_prompt(request):
     job.images[0].save(response, "PNG")
     return response
 
-@never_cache
+@csrf_exempt
 def txt2img(request):
-    prompt_value = request.GET['q']
+    new_config = config()
+    new_config.config = cfg.config
+    new_config.ckpt = cfg.ckpt
+    new_config.safety_filter = True
+    new_config.seed = random.randint(0, 2**32)
+
+    data = json.loads(request.body)
+
+    prompt_value = data['prompt']
+    if isinstance(prompt_value, list):
+        file_name = prompt_value[0]["text"]
+    else:
+        file_name = prompt_value
+    print(type(prompt_value))
+    print(prompt_value)
     try:
-        if 'scale' in request.GET.keys():
-            cfg.scale = int(request.GET['scale'])
-        if 'w' in request.GET.keys():
-            cfg.W = int(request.GET['w']) // 2
-        if 'h' in request.GET.keys():
-            cfg.H = int(request.GET['h']) // 2
-        if 'steps' in request.GET.keys():
-            cfg.ddim_steps = int(request.GET['steps'])
+        if 'scale' in data.keys():
+            new_config.scale = float(data['scale'])
+        if 'w' in data.keys():
+            new_config.W = int(data['w']) // 2
+        if 'h' in data.keys():
+            new_config.H = int(data['h']) // 2
+        if 'steps' in data.keys():
+            new_config.ddim_steps = int(data['steps'])
+        if 'seed' in data.keys():
+            new_config.seed = int(data['seed'])
+        if 'safety' in data.keys():
+            new_config.safety_filter = Boolean(data['safety'])
+
     except:
         print("ERROR")
   
-    cfg.seed = 0
-    images = generate(cfg, f"{prompt_value}", global_model) 
+    images = generate(new_config, prompt_value, global_model) 
 
     img = images[0]
     response = HttpResponse(content_type='image/png')
     
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response['Access-Control-Expose-Headers'] = 'seed-number,file-name'
-    response["seed-number"] = cfg.seed
-    response["file-name"] = f"{sanitize_file_name(prompt_value)}__{cfg.seed}.png"
-    response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(prompt_value)}.png\""
+    response['filename'] = f"{sanitize_file_name(file_name)}__{new_config.seed}.png"
 
     img.save(response, "PNG")
     return response
+import os
+@csrf_exempt
+def img2img(request):
+    new_config = config()
+    new_config.plms = False
+    new_config.config = cfg.config
+    new_config.ckpt = cfg.ckpt
+    new_config.safety_filter = True
+    new_config.seed = random.randint(0, 2**32)
+    new_config.init_img_strength = 0.5
+    if request.method == 'POST' and request.FILES['image']:
+        img = Image.open(request.FILES['image'])
+        new_config.init_img_data = img
+        prompt_value = request.POST['prompt']
+        try:
+            if 'scale' in request.POST.keys():
+                new_config.scale = int(request.POST['scale'])
+            if 'w' in request.POST.keys():
+                new_config.W = int(request.POST['w'])
+            if 'h' in request.POST.keys():
+                new_config.H = int(request.POST['h'])
+            if 'strength' in request.POST.keys():
+                new_config.init_img_strength = int(request.POST['strength'])
+            if 'steps' in request.POST.keys():
+                new_config.ddim_steps = int(request.POST['steps'])
+            if 'seed' in request.POST.keys():
+                new_config.seed = int(request.POST['seed'])
+        except:
+            print("ERROR")
+
+        images = generate(new_config, f"{prompt_value}", global_model) 
+
+        img = images[0]
+        response = HttpResponse(content_type='image/png')
+        response['filename'] = f"{sanitize_file_name(prompt_value)}__{new_config.seed}.png"
+
+        img.save(response, "PNG")
+        return response
+    
+    response_data = {}
+    response_data['result'] = 'ERR'
+    response_data['message'] = "No image attached"
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
