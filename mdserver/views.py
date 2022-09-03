@@ -7,7 +7,7 @@ from django.http import FileResponse
 import time, random
 import uuid
 from PIL import Image 
-from .stable import generate, config, load_model
+from .stable import generate, config, load_model, prepare_mask
 import json
 import queue
 import threading
@@ -185,6 +185,9 @@ def img2img(request):
     new_config.init_img_strength = 0.5
     if request.method == 'POST' and request.FILES['image']:
         img = Image.open(request.FILES['image'])
+        if 'mask' in request.FILES.keys():
+            img_mask = Image.open(request.FILES['mask'])
+            new_config.init_img_mask_data = img_mask
         new_config.init_img_data = img
         prompt_value = request.POST['prompt']
         try:

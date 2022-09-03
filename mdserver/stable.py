@@ -8,6 +8,7 @@ from tqdm import tqdm, trange
 from itertools import islice
 from einops import rearrange, repeat
 from torchvision.utils import make_grid
+import torchvision.transforms.functional as TF
 import time
 from pytorch_lightning import seed_everything
 from torch import autocast
@@ -92,6 +93,7 @@ class config():
         self.skip_grid = False
         self.init_img = None
         self.init_img_data = None
+        self.init_img_mask_data = None
         self.init_img_strength = 0.0
 def load_model(config_path, checkpoint_path):
     config = OmegaConf.load(config_path)
@@ -120,6 +122,37 @@ def numpy_to_pil(images):
     pil_images = [Image.fromarray(image) for image in images]
 
     return pil_images
+def load_mask_img(path, shape):
+    # path (str): Path to the mask image
+    # shape (list-like len(4)): shape of the image to match, usually latent_image.shape
+    mask_w_h = (shape[-1], shape[-2])
+    if path.startswith('http://') or path.startswith('https://'):
+        mask_image = Image.open(requests.get(path, stream=True).raw).convert('RGBA')
+    else:
+        mask_image = Image.open(path).convert('RGBA')
+    mask = mask_image.resize(mask_w_h, resample=Image.LANCZOS)
+    mask = mask.convert("L")
+    return mask
+
+def prepare_mask(mask, mask_brightness_adjust=1.0, mask_contrast_adjust=1.0, invert=False):
+
+    # Mask brightness/contrast adjustments
+    if mask_brightness_adjust != 1:
+        mask = TF.adjust_brightness(mask, mask_brightness_adjust)
+    if mask_contrast_adjust != 1:
+        mask = TF.adjust_contrast(mask, mask_contrast_adjust)
+
+    # Mask image to array
+    mask = np.array(mask).astype(np.float32) / 255.0
+    mask = np.tile(mask,(4,1,1))
+    mask = np.expand_dims(mask,axis=0)
+    mask = torch.from_numpy(mask)
+
+    if invert:
+        mask = ( (mask - 0.5) * -1) + 0.5
+    
+    mask = np.clip(mask,0,1)
+    return mask
 
 def check_safety(x_image):
     print("Checking for safety")
@@ -147,6 +180,9 @@ def generate(opt, prompt, model):
     if opt.init_img != None or opt.init_img_data != None:
         if opt.init_img_data == None: 
             assert os.path.isfile(opt.init_img)
+        if opt.init_img_mask_data != None:
+            prepared_mask = prepare_mask(opt.init_img_mask_data)
+        
         init_image = load_img(opt).to(device)
         init_image = init_image.half()
         init_image = repeat(init_image, '1 ... -> b ...', b=1)
@@ -156,6 +192,7 @@ def generate(opt, prompt, model):
 
         assert 0. <= opt.init_img_strength <= 1., 'can only work with strength in [0.0, 1.0]'
         t_enc = int(opt.init_img_strength * opt.ddim_steps)
+        
         print(f"target t_enc is {t_enc} steps")
     else:
         start_code = None
