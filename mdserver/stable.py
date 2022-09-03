@@ -21,6 +21,8 @@ from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 
+from kdiffusion.external import CompVisDenoiser
+
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 
@@ -192,7 +194,7 @@ def generate(opt, prompt, model):
 
         assert 0. <= opt.init_img_strength <= 1., 'can only work with strength in [0.0, 1.0]'
         t_enc = int(opt.init_img_strength * opt.ddim_steps)
-        
+
         print(f"target t_enc is {t_enc} steps")
     else:
         start_code = None
