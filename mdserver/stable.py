@@ -155,8 +155,31 @@ def prepare_mask(mask, mask_brightness_adjust=1.0, mask_contrast_adjust=1.0, inv
     
     mask = np.clip(mask,0,1)
     return mask
+def make_callback(mask=None, init_latent=None, sigmas=None, sampler=None, device = "cuda", masked_noise_modifier=1.0):
+    def img_callback(img, i):
+        if mask is not None:
+            i_inv = len(sigmas) - i - 1
+            init_noise = sampler.stochastic_encode(init_latent, torch.tensor([i_inv]*1).to(device), noise=noise)
+            is_masked = torch.logical_and(mask >= mask_schedule[i], mask != 0 )
+            new_img = init_noise * torch.where(is_masked,1,0) + img * torch.where(is_masked,0,1)
+            img.copy_(new_img)
+    if init_latent is not None:
+        noise = torch.randn_like(init_latent, device=device) * masked_noise_modifier
+    if sigmas is not None and len(sigmas) > 0:
+        mask_schedule, _ = torch.sort(sigmas/torch.max(sigmas))
+    elif len(sigmas) == 0:
+        mask = None # no mask needed if no steps (usually happens because strength==1.0)
+
+    # Callback function formated for compvis latent diffusion samplers
+    if mask is not None:
+        assert sampler is not None, "Callback function for stable-diffusion samplers requires sampler variable"
+        batch_size = init_latent.shape[0]
+
+        callback = img_callback
+    return img_callback
 
 def check_safety(x_image):
+
     print("Checking for safety")
     safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
     x_checked_image, has_nsfw_concept = safety_checker(images=x_image, clip_input=safety_checker_input.pixel_values)
@@ -173,6 +196,7 @@ def generate(opt, prompt, model):
     else:
         sampler = DDIMSampler(model)
     images = []
+    model_wrap = CompVisDenoiser(model) 
 
     if opt.seed > 0 : seed_everything(opt.seed)
     else :
@@ -194,6 +218,14 @@ def generate(opt, prompt, model):
 
         assert 0. <= opt.init_img_strength <= 1., 'can only work with strength in [0.0, 1.0]'
         t_enc = int(opt.init_img_strength * opt.ddim_steps)
+        # Noise schedule for the k-diffusion samplers (used for masking)
+        k_sigmas = model_wrap.get_sigmas(opt.ddim_steps)
+        k_sigmas = k_sigmas[len(k_sigmas)-t_enc-1:]
+        callback = make_callback(
+                            mask=prepared_mask, 
+                            init_latent=init_latent,
+                            sigmas=k_sigmas,
+                            sampler=sampler)
 
         print(f"target t_enc is {t_enc} steps")
     else:
@@ -227,7 +259,12 @@ def generate(opt, prompt, model):
                     # encode (scaled latent)
                     z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc]).to(device))
                     # decode it
-                    samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=opt.scale, unconditional_conditioning=uc,)
+                    samples = sampler.decode(z_enc, 
+                                            c, 
+                                            t_enc, 
+                                            unconditional_guidance_scale=opt.scale, 
+                                            unconditional_conditioning=uc,
+                                            img_callback=callback)
                 else:
                     shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
                     samples, _ = sampler.sample(S=opt.ddim_steps,
