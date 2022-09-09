@@ -15,6 +15,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.conf.urls.static import static
+from django.conf import settings
 
 from mdapp import views as md_views  # This line is new
 from mdserver import views as md_server_views
@@ -29,4 +31,4 @@ urlpatterns = [
     path('img2img/', md_server_views.img2img),
 
     path('', md_views.index),  # This line is new
-]
+] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

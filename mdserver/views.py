@@ -58,11 +58,11 @@ global_queue = RenderQueue()
 global_queue.start()
 
 cfg = config()
-##cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-##cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
+cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
 
-cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
+#cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+#cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
 
 global_model = load_model(cfg.config, cfg.ckpt)
 # Create your views here.
