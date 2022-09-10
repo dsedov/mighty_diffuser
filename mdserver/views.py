@@ -125,7 +125,7 @@ def download_prompt(request):
     job = global_queue.get_job(id_value)
 
     response = HttpResponse(content_type='image/png')   
-    response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}.png\""
+    response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}_{job.settings.seed}.png\""
     job.images[0].save(response, "PNG")
     return response
 
