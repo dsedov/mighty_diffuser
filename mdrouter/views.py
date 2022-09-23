@@ -28,6 +28,7 @@ def get_client_ip(request):
     return ip
 
 @never_cache
+@csrf_exempt
 def register_node(request):
     data = json.loads(request.body)
 
@@ -35,7 +36,8 @@ def register_node(request):
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
-
+@never_cache
+@csrf_exempt
 def ping(request):
     data = json.loads(request.body)
 
@@ -46,6 +48,7 @@ def ping(request):
 
 
 @never_cache
+@csrf_exempt
 def submit_prompt(request):
     new_config = config()
     new_config.config = cfg.config
@@ -83,6 +86,7 @@ def submit_prompt(request):
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @never_cache
+@csrf_exempt
 def check_prompt(request):
     id_value = request.GET['id']
     job = global_queue.get_job(id_value)
@@ -96,6 +100,7 @@ def check_prompt(request):
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @never_cache
+@csrf_exempt
 def download_prompt(request):
     id_value = request.GET['id']
     job = global_queue.get_job(id_value)
