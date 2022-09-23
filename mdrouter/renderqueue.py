@@ -10,7 +10,7 @@ class RenderQueueItem():
 
 class RenderQueue():
     def __init__(self):
-        print("RQ: Starting render queue")
+        print("- Starting Render Queue") 
         self.finished_jobs = {}
         self.queue = queue.Queue()
         self.lock = lock = threading.Lock()

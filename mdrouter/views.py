@@ -28,6 +28,24 @@ def get_client_ip(request):
     return ip
 
 @never_cache
+def register_node(request):
+    data = json.loads(request.body)
+
+    response_data = {}
+    response_data['result'] = 'OK'
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+
+
+def ping(request):
+    data = json.loads(request.body)
+
+    response_data = {}
+    response_data['result'] = 'OK'
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+
+
+
+@never_cache
 def submit_prompt(request):
     new_config = config()
     new_config.config = cfg.config

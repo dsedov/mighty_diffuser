@@ -22,6 +22,9 @@ from mdapp import views as md_views  # This line is new
 from mdrouter import views as mdrouter_views
 urlpatterns = [
 
+    path('register_node/', mdrouter_views.register_node),
+    path('ping/', mdrouter_views.ping),
+
     path('submit_prompt/', mdrouter_views.submit_prompt),
     path('check_prompt/', mdrouter_views.check_prompt),
     path('download_prompt/',mdrouter_views.download_prompt),
