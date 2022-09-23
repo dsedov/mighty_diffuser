@@ -22,12 +22,13 @@ class MdnodeConfig(AppConfig):
             print("Starting MD Node")
             self.cfg.config = self.server_config["stable_diffusion"]["config"]
             self.cfg.ckpt   = self.server_config["stable_diffusion"]["checkpoint"]
-            self.model = load_model(self.cfg.config, self.cfg.ckpt)
+            #self.model = load_model(self.cfg.config, self.cfg.ckpt)
 
             print("Registering with Router")
             requestSetting = json.dumps({
-                'node_address' : self.config["server"]["node_address"],
+                'node_address' : self.server_config["server"]["node_address"],
                 'gpu' : '2080',
             })
-            r = requests.post(self.config["server"]["router_address"] + "/register_node/", json=requestSetting)
-            print(r.json())
+            r = requests.post('http://' + self.server_config["server"]["router_address"] + "/router/register_node/", json=requestSetting)
+            if r.status_code == 200:
+                print(r.json())
