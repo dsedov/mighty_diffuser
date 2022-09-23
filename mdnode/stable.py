@@ -155,6 +155,7 @@ def prepare_mask(mask, mask_brightness_adjust=1.0, mask_contrast_adjust=1.0, inv
     
     mask = np.clip(mask,0,1)
     return mask
+    
 def make_callback(mask=None, init_latent=None, sigmas=None, sampler=None, device = "cuda", masked_noise_modifier=1.0):
     def img_callback(img, i):
         if mask is not None:

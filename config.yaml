@@ -1,0 +1,6 @@
+server:
+  mode: "router" # router, node 
+  router_address: "127.0.0.1:8888"
+stable_diffusion:
+  checkpoint: "//Forte/ID/All_Projects/render_library/12_AI/models/ldm/stable-diffusion-v1/model.ckpt"
+  config: "//Forte/ID/All_Projects/render_library/12_AI/configs/stable-diffusion/v1-inference.yaml"

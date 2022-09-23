@@ -32,6 +32,8 @@ ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'mdapp.apps.MdappConfig',
+    'mdnode.apps.MdnodeConfig',
+    'mdrouter.apps.MdrouterConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
