@@ -31,7 +31,7 @@ def get_client_ip(request):
 @csrf_exempt
 def register_node(request):
     data = json.loads(request.body)
-
+    print(f"Node request: {get_client_ip(request)}")
     response_data = {}
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
