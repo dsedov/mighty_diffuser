@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter
 class RenderQueueItem():
     def __init__(self, prompt, settings):
         self.prompt = prompt
+        self.saved = False
         self.settings = settings 
         self.images = []
         self.id = str(uuid.uuid4())
@@ -58,16 +59,25 @@ global_queue = RenderQueue()
 global_queue.start()
 
 cfg = config()
-cfg.config = "C:/Users/dsedov/sd/dev/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
-cfg.ckpt = "C:/Users/dsedov/sd/dev/models/ldm/stable-diffusion-v1/model.ckpt"
+cfg.config = "C:/Users/dsedov/deployment/mighty_diffuser/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
+cfg.ckpt = "C:/Users/dsedov/deployment/models/ldm/stable-diffusion-v1/model.ckpt"
 
 #cfg.config = "/home/dsedov/Dev/stable-diffusion/configs/stable-diffusion/v1-inference.yaml"
 #cfg.ckpt = "/home/dsedov/Dev/models/sd-v1-4.ckpt"
 
 global_model = load_model(cfg.config, cfg.ckpt)
 # Create your views here.
+import re
 def sanitize_file_name(name):
-    return name.replace(',','_').replace(':','_').lower()
+    name = re.sub(r'[^a-z_A-Z0-9]', '', name.replace(' ', '_'))
+    return name.lower()
+def get_client_ip(request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
 
 @never_cache
 def submit_prompt(request):
@@ -127,7 +137,35 @@ def download_prompt(request):
     response = HttpResponse(content_type='image/png')   
     response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}_{job.settings.seed}.png\""
     job.images[0].save(response, "PNG")
+    #job.images[0].save(f'F:/All_Projects/render_library/12_AI/history/{sanitize_file_name(job.prompt)}_{job.settings.seed}_{id_value}.png')
     return response
+
+from pathlib import Path
+@csrf_exempt
+def save_prompt(request):
+    data = json.loads(request.body)
+    id_value = data['id']
+    job = global_queue.get_job(id_value)
+    
+    root_folder = f'F:/All_Projects/render_library/12_AI/saved/{get_client_ip(request)}/'
+    Path(root_folder).mkdir(parents=True, exist_ok=True)    
+    job.images[0].save(f'{root_folder}{id_value}.png')
+    with open(f"{root_folder}{id_value}.json", 'w') as f:
+        f.writelines(json.dumps({
+            "prompt" : job.prompt,
+            "seed" : job.settings.seed,
+            "settings" : {
+                "width" : job.settings.W,
+                "height": job.settings.H,
+                "steps" : job.settings.ddim_steps,
+                "scale" : job.settings.scale,
+            }
+        }))
+
+    response_data = {}
+    response_data['result'] = 'OK'
+
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @csrf_exempt
 def txt2img(request):

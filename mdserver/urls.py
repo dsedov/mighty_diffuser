@@ -26,6 +26,7 @@ urlpatterns = [
     path('submit_prompt/', md_server_views.submit_prompt),
     path('check_prompt/', md_server_views.check_prompt),
     path('download_prompt/',md_server_views.download_prompt),
+    path('save_prompt/',md_server_views.save_prompt),
 
     path('txt2img/', md_server_views.txt2img),
     path('img2img/', md_server_views.img2img),
