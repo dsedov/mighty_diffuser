@@ -1,5 +1,5 @@
 server:
-  mode: "router" # router, node 
+  mode: "node" # router, node 
   router_address: "127.0.0.1:8000"
   node_address: "127.0.0.1:8888"
 stable_diffusion:
