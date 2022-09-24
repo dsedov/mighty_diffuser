@@ -2,7 +2,7 @@ from django.apps import AppConfig
 
 
 
-import uuid, yaml
+import uuid, yaml, os
 from PIL import Image 
 
 import json
@@ -22,12 +22,13 @@ class MdrouterConfig(AppConfig):
     node_manager = None
 
     def ready(self):
-        print("Checking MD Router...")
-        if self.server_config['server']['mode'] == 'router':
-            print("Starting MD Router")
+        if os.environ.get('RUN_MAIN', None) == 'true':
+            print("Checking MD Router...")
+            if self.server_config['server']['mode'] == 'router':
+                print("Starting MD Router")
 
-            self.node_manager = RenderNodeManager()
-            self.global_queue = RenderQueue()
-            self.global_queue.start()
+                self.node_manager = RenderNodeManager()
+                self.global_queue = RenderQueue()
+                self.global_queue.start()
 
             

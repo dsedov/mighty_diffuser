@@ -1,5 +1,7 @@
 import uuid
 import threading, queue
+from django.apps import apps
+
 class RenderQueueItem():
     def __init__(self, prompt, settings):
         self.prompt = prompt
@@ -13,12 +15,15 @@ class RenderQueue():
         print("- Starting Render Queue") 
         self.finished_jobs = {}
         self.queue = queue.Queue()
-        self.lock = lock = threading.Lock()
+        self.lock = threading.Lock()
+    
     def post_job(self, job):
         print("RQ: Received mew job")
         self.queue.put(job)
+    
     def grab_job(self):
         return self.queue.get()
+    
     def loop(self):
         print("RQ: Render server started")
         while(1):
@@ -30,6 +35,7 @@ class RenderQueue():
             self.finished_jobs[job.id] = job
             self.lock.release()
             print("RQ: Processed job")
+    
     def get_job(self, id):
         self.lock.acquire()
         job = None

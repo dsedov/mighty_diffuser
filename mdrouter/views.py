@@ -4,15 +4,16 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 from django.http import FileResponse
+from django.apps import apps
 import random
 import uuid, yaml
 from PIL import Image 
-
+from mdnode.stable import config
 import json
 import queue
 import threading
 from PIL import Image
-
+from mdrouter.renderqueue import RenderQueueItem
 
 # Create your views here.
 import re
@@ -31,16 +32,24 @@ def get_client_ip(request):
 @csrf_exempt
 def register_node(request):
     data = json.loads(request.body)
-    print(f"Node request: {get_client_ip(request)}")
+    appConfig = apps.get_app_config('mdrouter')
+    node_address = data["node_address"]
+    node_gpu = data["node_gpu"]
+    print(f"Node request: {node_address} - GPU:{node_gpu}")
+    appConfig.node_manager.register_node(node_address, node_gpu)
     response_data = {}
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 @never_cache
 @csrf_exempt
-def ping(request):
+def ping_node(request):
     data = json.loads(request.body)
-
+    appConfig = apps.get_app_config('mdrouter')
+    node_address = data["node_address"]
+    node_gpu = data["node_gpu"]
+    print(f"Node ping: {node_address}")
+    appConfig.node_manager.ping_node(node_address, node_gpu)
     response_data = {}
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
@@ -50,9 +59,9 @@ def ping(request):
 @never_cache
 @csrf_exempt
 def submit_prompt(request):
+    appConfig = apps.get_app_config('mdrouter')
+
     new_config = config()
-    new_config.config = cfg.config
-    new_config.ckpt = cfg.ckpt
     new_config.safety_filter = True
     new_config.seed = random.randint(0, 2**32)
 
@@ -77,7 +86,7 @@ def submit_prompt(request):
 
 
     new_render_item = RenderQueueItem(prompt_value, new_config)
-    global_queue.post_job(new_render_item)
+    appConfig.global_queue.post_job(new_render_item)
 
     response_data = {}
     response_data['result'] = 'OK'
@@ -88,8 +97,9 @@ def submit_prompt(request):
 @never_cache
 @csrf_exempt
 def check_prompt(request):
+    appConfig = apps.get_app_config('mdrouter')
     id_value = request.GET['id']
-    job = global_queue.get_job(id_value)
+    job = appConfig.global_queue.get_job(id_value)
     response_data = {}
     if job is not None:
         response_data['result'] = 'OK'
@@ -102,8 +112,9 @@ def check_prompt(request):
 @never_cache
 @csrf_exempt
 def download_prompt(request):
+    appConfig = apps.get_app_config('mdrouter')
     id_value = request.GET['id']
-    job = global_queue.get_job(id_value)
+    job = appConfig.global_queue.get_job(id_value)
 
     response = HttpResponse(content_type='image/png')   
     response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}_{job.settings.seed}.png\""
@@ -113,9 +124,10 @@ def download_prompt(request):
 from pathlib import Path
 @csrf_exempt
 def save_prompt(request):
+    appConfig = apps.get_app_config('mdrouter')
     data = json.loads(request.body)
     id_value = data['id']
-    job = global_queue.get_job(id_value)
+    job = appConfig.global_queue.get_job(id_value)
     
     root_folder = f'F:/All_Projects/render_library/12_AI/saved/{get_client_ip(request)}/'
     Path(root_folder).mkdir(parents=True, exist_ok=True)    

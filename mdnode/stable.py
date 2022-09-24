@@ -69,7 +69,6 @@ def load_img(opt):
     return 2.*image - 1.
 
 class config():
-
       def __init__(self):
         self.safety_filter = True
         #self.outdir = 'C:/Users/dsedov/sd/output'
@@ -97,6 +96,7 @@ class config():
         self.init_img_data = None
         self.init_img_mask_data = None
         self.init_img_strength = 0.0
+
 def load_model(config_path, checkpoint_path):
     config = OmegaConf.load(config_path)
     model = load_model_from_config(config, checkpoint_path)
