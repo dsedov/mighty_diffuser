@@ -35,7 +35,7 @@ def chunk(it, size):
     it = iter(it)
     return iter(lambda: tuple(islice(it, size)), ())
 
-def load_model_from_config(config, ckpt, verbose=False):
+def load_model_from_config(config, ckpt, verbose=False, gpu=True):
     print(f"Loading model from {ckpt}")
     pl_sd = torch.load(ckpt, map_location="cpu")
     if "global_step" in pl_sd:
@@ -50,7 +50,10 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
+    if gpu:
+        model.cuda()
+    else:
+        model.cpu()
     model.eval()
     return model
 
@@ -97,10 +100,10 @@ class config():
         self.init_img_mask_data = None
         self.init_img_strength = 0.0
 
-def load_model(config_path, checkpoint_path):
+def load_model(config_path, checkpoint_path, gpu=True):
     config = OmegaConf.load(config_path)
-    model = load_model_from_config(config, checkpoint_path)
-    model = model.half()
+    model = load_model_from_config(config, checkpoint_path, gpu=gpu)
+    if gpu: model = model.half()
     return model
 def load_replacement(x):
     print("Replacing image with safety")
@@ -190,8 +193,7 @@ def check_safety(x_image):
             print("Found non safe image")
             x_checked_image[i] = load_replacement(x_checked_image[i])
     return x_checked_image, has_nsfw_concept
-def generate(opt, prompt, model):
-    device = 'cuda'
+def generate(opt, prompt, model, device='cuda'):
     if opt.plms:
         sampler = PLMSSampler(model)
     else:
@@ -236,7 +238,7 @@ def generate(opt, prompt, model):
 
     precision_scope = autocast if opt.precision=="autocast" else nullcontext
     with torch.no_grad():
-        with precision_scope("cuda"):
+        with precision_scope(device):
             with model.ema_scope():
                 #tic = time.time()
                 all_samples = list()

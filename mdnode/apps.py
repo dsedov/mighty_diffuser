@@ -16,7 +16,6 @@ class MdnodeConfig(AppConfig):
     server_config = yaml.safe_load(open("config.yaml"))
     cfg = config()
     model = None
-    initiated = False
     def ping(self):
         while(1):
             print("Ping server")
@@ -34,13 +33,14 @@ class MdnodeConfig(AppConfig):
     def ready(self):
         if os.environ.get('RUN_MAIN', None) == 'true':
             print("Checking MD Node...")
-            print(f"- Initiated {self.initiated}")
-            initiated = True
             if(self.server_config["server"]["mode"] == 'node'):
                 print("Starting MD Node")
                 self.cfg.config = self.server_config["stable_diffusion"]["config"]
                 self.cfg.ckpt   = self.server_config["stable_diffusion"]["checkpoint"]
-                #self.model = load_model(self.cfg.config, self.cfg.ckpt)
+                self.model = load_model(self.cfg.config, 
+                                        self.cfg.ckpt, 
+                                        gpu=(self.server_config["stable_diffusion"]["device"]=='cuda')
+                                        )
 
                 print("Registering with Router")
                 while(1):
