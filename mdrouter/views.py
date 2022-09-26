@@ -2,10 +2,12 @@ from xmlrpc.client import Boolean
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.http import FileResponse
 from django.apps import apps
-import random
+from .models import Node, Prompt, User
+import random, pytz
+from datetime import datetime
 import uuid, yaml
 from PIL import Image 
 from mdnode.stable import config
@@ -13,7 +15,7 @@ import json
 import queue
 import threading
 from PIL import Image
-from mdrouter.renderqueue import RenderQueueItem
+
 
 # Create your views here.
 import re
@@ -27,16 +29,45 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
+def bad_request(message):
+    response_data = {}
+    response_data['result'] = 'ERR'
+    response_data['message'] = message
+    return HttpResponseBadRequest(json.dumps(response_data), content_type="application/json")
+def ok_reply(message=''):
+    response_data = {}
+    response_data['result'] = 'OK'
+    response_data['message'] = message
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+def waiting_reply(message=''):
+    response_data = {}
+    response_data['result'] = 'WAITING'
+    response_data['message'] = message
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+def rendering_reply(message=''):
+    response_data = {}
+    response_data['result'] = 'RENDERING'
+    response_data['message'] = message
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
+
+ 
 
 @never_cache
 @csrf_exempt
 def register_node(request):
     data = json.loads(request.body)
-    appConfig = apps.get_app_config('mdrouter')
     node_address = data["node_address"]
     node_gpu = data["node_gpu"]
-    print(f"Node request: {node_address} - GPU:{node_gpu}")
-    appConfig.node_manager.register_node(node_address, node_gpu)
+    try:
+        possible_node = Node.objects.get(address=node_address)
+        possible_node.busy = False
+        possible_node.save()
+    except Node.DoesNotExist:
+        node = Node(address=node_address, 
+                    settings=json.dumps({'gpu' :node_gpu }),
+                    last_access=datetime.now(pytz.timezone("America/Los_Angeles")))
+        node.save()
+
     response_data = {}
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
@@ -45,11 +76,20 @@ def register_node(request):
 @csrf_exempt
 def ping_node(request):
     data = json.loads(request.body)
-    appConfig = apps.get_app_config('mdrouter')
     node_address = data["node_address"]
     node_gpu = data["node_gpu"]
+
+    try:
+        possible_node = Node.objects.get(address=node_address)
+        possible_node.last_access = datetime.now(pytz.timezone("America/Los_Angeles"))
+        possible_node.save()
+    except Node.DoesNotExist:
+        node = Node(address=node_address, 
+                    settings=json.dumps({'gpu' :node_gpu }),
+                    last_access=datetime.now(pytz.timezone("America/Los_Angeles")))
+        node.save()
     print(f"Node ping: {node_address}")
-    appConfig.node_manager.ping_node(node_address, node_gpu)
+
     response_data = {}
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
@@ -60,54 +100,59 @@ def ping_node(request):
 @csrf_exempt
 def submit_prompt(request):
     appConfig = apps.get_app_config('mdrouter')
-
-    new_config = config()
-    new_config.safety_filter = True
-    new_config.seed = random.randint(0, 2**32)
-
-    prompt_value = request.GET['q']
     try:
-        if 'scale' in request.GET.keys():
-            new_config.scale = int(request.GET['scale'])
-        if 'w' in request.GET.keys():
-            new_config.W = int(request.GET['w']) // 2
-        if 'h' in request.GET.keys():
-            new_config.H = int(request.GET['h']) // 2
-        if 'steps' in request.GET.keys():
-            new_config.ddim_steps = int(request.GET['steps'])
-        if 'samples' in request.GET.keys():
-            new_config.n_samples = int(request.GET['samples'])
-        if 'seed' in request.GET.keys():
-            new_config.seed = int(request.GET['seed'])
-        if 'seed' in request.POST.keys():
-            new_config.seed = int(request.POST['seed'])
+        data = json.loads(request.body)
+
+        # User
+        client_ip = get_client_ip(request)
+        try:
+            user = User.objects.get(username=client_ip)
+        except User.DoesNotExist:
+            user = User(username=client_ip)
+            user.save()
+
+        # Prompt
+        for k in ['prompt', 'w', 'h', 'steps', 'scale', 'seed']:
+            if k not in data.keys(): return bad_request(f"{k} is missing")
+        new_request = Prompt(
+            owner=user,
+            prompt=data["prompt"],
+            safety=True,
+            width=int(data['w']),
+            height=int(data['h']),
+            steps=int(data['steps']),
+            scale=float(data['scale']),
+            added_date=datetime.now(pytz.timezone("America/Los_Angeles"))
+        )
+        new_request.save()
+
+        response_data = {}
+        response_data['result'] = 'OK'
+        response_data['prompt_id'] = new_request.id
+        return HttpResponse(json.dumps(response_data), content_type="application/json")
     except:
-        print("ERROR")
-
-
-    new_render_item = RenderQueueItem(prompt_value, new_config)
-    appConfig.global_queue.post_job(new_render_item)
-
-    response_data = {}
-    response_data['result'] = 'OK'
-    response_data['seed'] = new_config.seed
-    response_data['id'] = str(new_render_item.id)
-    return HttpResponse(json.dumps(response_data), content_type="application/json")
+        return bad_request('no json data found')
 
 @never_cache
 @csrf_exempt
 def check_prompt(request):
     appConfig = apps.get_app_config('mdrouter')
-    id_value = request.GET['id']
-    job = appConfig.global_queue.get_job(id_value)
-    response_data = {}
-    if job is not None:
-        response_data['result'] = 'OK'
-        response_data['samples'] = len(job.images)
+    try:
+        data = json.loads(request.body)
+        if 'prompt_id' not in data.keys(): return bad_request('prompt_id is missing')
 
-    else:
-        response_data['result'] = 'WAITING'
-    return HttpResponse(json.dumps(response_data), content_type="application/json")
+        try:
+            prompt = Prompt.objects.get(id=data['prompt_id'])
+            if prompt.status == 0: return waiting_reply()
+            elif prompt.status == 1: return rendering_reply()
+            elif prompt.status == 2: return ok_reply() 
+            else:
+                return bad_request("status error")
+
+        except Prompt.DoesNotExist:
+            return bad_request('prompt does not exist')
+    except:
+        return bad_request('no json data found')
 
 @never_cache
 @csrf_exempt
@@ -126,27 +171,15 @@ from pathlib import Path
 def save_prompt(request):
     appConfig = apps.get_app_config('mdrouter')
     data = json.loads(request.body)
-    id_value = data['id']
-    job = appConfig.global_queue.get_job(id_value)
-    
-    root_folder = f'F:/All_Projects/render_library/12_AI/saved/{get_client_ip(request)}/'
-    Path(root_folder).mkdir(parents=True, exist_ok=True)    
-    job.images[0].save(f'{root_folder}{id_value}.png')
-    with open(f"{root_folder}{id_value}.json", 'w') as f:
-        f.writelines(json.dumps({
-            "prompt" : job.prompt,
-            "seed" : job.settings.seed,
-            "settings" : {
-                "width" : job.settings.W,
-                "height": job.settings.H,
-                "steps" : job.settings.ddim_steps,
-                "scale" : job.settings.scale,
-            }
-        }))
+    if 'prompt_id' not in data.keys(): return bad_request('prompt_id is missing')
 
-    response_data = {}
-    response_data['result'] = 'OK'
+    try:
+        prompt = Prompt.objects.get(id=data['prompt_id'])
+        prompt.saved = True
+        prompt.save()
+        return ok_reply()
+    except Prompt.DoesNotExist:
+        return bad_request("prompt does not exist")
 
-    return HttpResponse(json.dumps(response_data), content_type="application/json")
 
 

@@ -1,7 +1,5 @@
 from django.apps import AppConfig
 
-
-
 import uuid, yaml, os
 from PIL import Image 
 
@@ -9,8 +7,7 @@ import json
 import queue
 import threading
 from PIL import Image
-from .renderqueue import RenderQueue
-from .nodes import RenderNodeManager
+
 
 class MdrouterConfig(AppConfig):
 
@@ -25,9 +22,8 @@ class MdrouterConfig(AppConfig):
         if os.environ.get('RUN_MAIN', None) == 'true':
             print("Checking MD Router...")
             if self.server_config['server']['mode'] == 'router':
+                from .renderqueue import RenderQueue
                 print("Starting MD Router")
-
-                self.node_manager = RenderNodeManager()
                 self.global_queue = RenderQueue()
                 self.global_queue.start()
 

@@ -360,20 +360,36 @@
         //this.onGenerate();
       },
       onGenerate(){
-
-        var request_url = this.api_server + "/submit_prompt/?q=" + this.prompt + "&w=" + this.width.val + "&h=" + this.height.val + "&scale=" + this.scale.val + "&steps=" + this.steps.val;
-        if(this.lock_seed) request_url = request_url + '&seed=' + this.seed;
-        fetch(request_url)
+        const renderOptions = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                prompt: this.prompt,
+                w: this.width.val,
+                h: this.height.val,
+                scale: this.scale.val,
+                steps: this.steps.val,
+                seed: this.seed,
+            })
+        };
+        fetch(this.api_server + '/submit_prompt/', renderOptions)
           .then(response => response.json())
           .then(data => {
             if(data.result == "OK"){
               this.seed = data.seed;
               this.image_id = data.id;
               this.overlay = true;
+              
+
               this.progressInterval = setInterval(() => {
                 if (this.progress === 100) {
-                  // Check image
-                  fetch(this.api_server + "/check_prompt/?id=" + this.image_id )
+                  var checkOptions = {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        prompt_id: this.image_id,
+                    })}
+                  fetch(this.api_server + "/check_prompt/", checkOptions)
                   .then(response => response.json())
                   .then(data => {
                     if(data.result == "OK"){
