@@ -15,15 +15,18 @@ import queue
 import threading
 from PIL import Image
 # Create your views here.
-
+import re
+def sanitize_file_name(name):
+    name = re.sub(r'[^a-z_A-Z0-9]', '', name.replace(' ', '_'))
+    return name.lower()
 
 @csrf_exempt
 def txt2img(request):
     appConfig = apps.get_app_config('mdnode')
     
     new_config = config()
-    new_config.config = appConfig.server_config.config
-    new_config.ckpt = appConfig.server_config.ckpt
+    new_config.config = appConfig.server_config["stable_diffusion"]["config"]
+    new_config.ckpt = appConfig.server_config["stable_diffusion"]["checkpoint"]
     new_config.safety_filter = True
     new_config.seed = random.randint(0, 2**32)
 
@@ -39,10 +42,10 @@ def txt2img(request):
     try:
         if 'scale' in data.keys():
             new_config.scale = float(data['scale'])
-        if 'w' in data.keys():
-            new_config.W = int(data['w']) // 2
-        if 'h' in data.keys():
-            new_config.H = int(data['h']) // 2
+        if 'width' in data.keys():
+            new_config.W = int(data['width']) // 2
+        if 'height' in data.keys():
+            new_config.H = int(data['height']) // 2
         if 'steps' in data.keys():
             new_config.ddim_steps = int(data['steps'])
         if 'seed' in data.keys():
@@ -53,7 +56,10 @@ def txt2img(request):
     except:
         print("ERROR")
   
-    images = generate(new_config, prompt_value, global_model) 
+    images = generate(  new_config, 
+                        prompt_value, 
+                        appConfig.model,
+                        device='cuda' if appConfig.server_config["stable_diffusion"]['device'] == 'cuda' else 'cpu') 
 
     img = images[0]
     response = HttpResponse(content_type='image/png')
@@ -66,6 +72,7 @@ def txt2img(request):
 import os
 @csrf_exempt
 def img2img(request):
+    appConfig = apps.get_app_config('mdnode')
     new_config = config()
     new_config.plms = False
     new_config.config = cfg.config
@@ -96,7 +103,7 @@ def img2img(request):
         except:
             print("ERROR")
 
-        images = generate(new_config, f"{prompt_value}", global_model) 
+        images = generate(new_config, f"{prompt_value}", appConfig.model) 
 
         img = images[0]
         response = HttpResponse(content_type='image/png')
