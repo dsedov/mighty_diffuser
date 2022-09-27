@@ -1,21 +1,18 @@
 <template>
   <v-app id="inspire">
-    <v-alert app :value="alert" prominent type="error">{{alertMessage}}</v-alert>
+
+
+
+
     <v-navigation-drawer app clipped permanent left width="150px" color="transparent" class="pa-2 invisible-scrollbar">
-      <v-list ref="history_container" id="historycontainer">
-        <img 
-          class="imgh" 
-          v-for="im in image_history" :key="im.id" 
-          :style= "[im.id == selected_image_id ? {'border':'1px solid white'} : im.saved ? {'border':'2px solid green'} : {'border':'1px solid black', 'opacity':0.7}]"
-          :src="im.url" 
-          :seed="im.seed"
-          :prompt="im.prompt" 
-          :im_id="im.id"
-          :gen_width="im.gen_width"
-          :gen_height="im.gen_height"
-          :gen_scale="im.gen_scale"
-          :gen_steps="im.gen_steps"
-          @click="image_click" />
+      <v-list class="d-flex flex-column-reverse" ref="history_container" id="historycontainer">
+        <ImageThumb v-for="im in image_history" :key="im.prompt_id"
+          :settings="im.settings" 
+          :prompt_id="im.prompt_id"
+          :selected="im.prompt_id == selected_image_id"
+          @show="show_image"
+        ></ImageThumb>
+        
       </v-list>
       <v-btn
         class="ml-4 save_button"
@@ -39,30 +36,24 @@
       ><v-icon>mdi-trash-can</v-icon></v-btn>
     </v-navigation-drawer>
     <v-main app style="display: flex;justify-content: center;align-items: center;" id="main">
-      <v-overlay :value="overlay" opacity="0.9">
-          <v-progress-circular
-            :rotate="360"
-            :size="100"
-            :width="15"
-            :value="progress"
-            color="teal"
-          >
-            {{ progress }}
-          </v-progress-circular>
-      </v-overlay>
       <v-container fluid id="imgcontainer" style="display:block;">
         
       </v-container>
     </v-main>
     <v-navigation-drawer app clipped permanent right color="transparent" class="pa-0">
             
-            <v-subheader>
-              Width
-            </v-subheader>
             
-              <v-slider 
+            <v-select
+              :items="possible_modes"
+              v-model="current_mode"
+              filled
+              label="Mode"
+              ></v-select>
+            <v-subheader>
+              Resolution {{width.val}} x {{height.val}} pixels
+            </v-subheader>
+            <v-slider 
               class="ml-4 mr-4"
-              :label="width.val"
               v-model="width.val"
               :thumb-color="width.color"
               :min="512"
@@ -71,18 +62,11 @@
               ticks="always"
               tick-size="2"
               thumb-label
-              inverse-label
-              v-bind="attrs"
-              v-on="on"
+              prepend-icon="mdi-arrow-expand-horizontal"
               ></v-slider>
-              
-   
-            <v-subheader>
-              Height
-            </v-subheader>
+
             <v-slider 
               class="ml-4 mr-4"
-              :label="height.val"
               v-model="height.val"
               :thumb-color="height.color"
               :min="512"
@@ -90,45 +74,57 @@
               step="64"
               ticks="always"
               tick-size="2"
+              prepend-icon="mdi-arrow-expand-vertical"
               thumb-label
-              inverse-label
               ></v-slider>
 
-            <v-subheader>
-              Scale
+              <v-subheader>
+            {{steps.val}} steps @ {{scale.val}} scale
             </v-subheader>
             <v-slider 
               class="ml-4 mr-4"
-              :label="scale.val"
-              v-model="scale.val"
-              :thumb-color="scale.color"
-              :min="1"
-              :max="20"
-              thumb-label
-              inverse-label
-              ></v-slider>
-            <v-subheader>
-              Steps
-            </v-subheader>
-            <v-slider 
-            class="ml-4 mr-4"
-              :label="steps.val"
               v-model="steps.val"
               :thumb-color="scale.color"
               :min="10"
               :max="60"
               thumb-label
-              inverse-label
+              prepend-icon="mdi-av-timer"
               ></v-slider>
-            <v-subheader>
-              Seed
+              <v-slider 
+              class="ml-4 mr-4"
+              v-model="scale.val"
+              :thumb-color="scale.color"
+              :min="1"
+              :max="20"
+              thumb-label
+              prepend-icon="mdi-lightning-bolt-outline"
+              ></v-slider>
+
+            
+              <v-subheader>
+            {{num_of_images}} image{{num_of_images > 1 ? 's' : ''}}
+            </v-subheader>
+            <v-slider 
+              class="ml-4 mr-4"
+              v-model="num_of_images"
+              thumb-color="blue lighten-1"
+              ticks="always"
+              tick-size="2"
+              :min="1"
+              :max="4"
+              thumb-label
+              prepend-icon="mdi-animation-outline"
+              ></v-slider>
+              <v-subheader>
+            Seed number
             </v-subheader>
             <v-text-field
               class="ml-4 mr-4"
               solo
               flat
               dense
-              :value="seed"
+              label="seed"
+              v-model="seed"
             ></v-text-field>
      
             <v-btn
@@ -154,23 +150,78 @@
             >render</v-btn>
     </v-navigation-drawer>
     
-    <v-footer app color="transparent" height="84" inset class="pl-0 pr-0">
+    <v-footer v-if="current_mode == 'Text -> Image'" fixed app color="transparent" height="80" inset class="pl-0 pr-0">
       <v-container>
         <v-row>
-          <v-textarea
-            class="ma-4"
-            filled
-            rows="2"
-            solo
-            flat
-            dense
-            @keydown.enter.exact.prevent="textarea_keypress"
-            v-model="prompt"
-            ></v-textarea>
-          </v-row>
-        </v-container>
+          <v-col class="ma-0 pa-0">
+            <v-textarea
+              class="ml-4 mr-4"
+              filled
+              rows="2"
+              solo
+              flat
+              dense
+              @keydown.enter.exact.prevent="textarea_keypress"
+              v-model="prompt"
+              ></v-textarea>
+            </v-col>
+        </v-row>
+      </v-container>
     </v-footer>
     
+    <v-footer v-if="current_mode == 'List -> Image'" fixed app color="transparent" height="135" inset class="pl-0 pr-0">
+      <v-container>
+        <v-row>
+          <v-col class="ma-0 pa-0">
+            <v-textarea
+              class="ml-4 mr-4"
+              filled
+              rows="1"
+              solo
+              flat
+              dense
+              hide-details
+              v-model="promptA"
+              ></v-textarea>
+          </v-col>
+        </v-row>
+        <v-row>
+          <v-col class="ma-0 pa-0">
+            <v-slider 
+            class="ml-4 mr-4"
+              v-model="prompt_blend"
+              :min="0.0"
+              :max="1.0"
+              :step="0.01"
+              thumb-label
+              hide-details
+              ></v-slider>
+          </v-col>
+        </v-row>
+        <v-row>
+          <v-col  class="ma-0 pa-0">
+            <v-textarea
+              class="ml-4 mr-4"
+              filled
+              rows="1"
+              solo
+              flat
+              dense
+              hide-details
+              v-model="promptB"
+              ></v-textarea>
+          </v-col>
+        </v-row>
+      </v-container>
+    </v-footer>
+
+    <v-alert app :value="alert" 
+    prominent 
+    dismissible
+    elevation="16"
+
+    type="error"
+    >{{alertMessage}}</v-alert>
   </v-app>
 </template>
 <style>
@@ -184,6 +235,14 @@
     max-height: 100%;
     margin-bottom: 4px;
   }
+  .v-alert {
+  position: fixed;
+  left:0;
+  width:100%;
+  top: 0px;
+  z-index: 10000;
+  margin: 0 auto; 
+}
 </style>
 <style >
   .render_button {
@@ -233,94 +292,120 @@
   }
 </style>
 <script>
+  import ImageThumb from './ImageThumb'
   export default {
+    components: {
+      ImageThumb,
+    },
     data: () => ({
-      progress: 0,
-      progressInterval: {},
+      possible_modes: ['Text -> Image', 'List -> Image'],
+      current_mode:'Text -> Image',
       alert: false,
-      overlay: false,
-      last_prompt : '',
-      last_seed : 0,
+      alertMessage: "Warning, generated images contained some not safe for work content and have been replaced.",
       prompt: "product photo, beautiful vase, zen garden, still life, photoreal, bokeh, depth of field, calming",
-      showImage: false,
-      currentImageData: 0,
-      currentImageUrl: "test.html",
-      currentImageName: "no_name.jpg",
       image_history: [],
-      seed:42,
-      lock_seed: true,
+
       image_id:'',
       selected_image_id:'',
       selected_image_saved:false,
-      generatedImage: "imagepath",
-      alertMessage: "Warning, generated images contained some not safe for work content and have been replaced.",
-      links: [
-        'Dashboard',
-        'Messages',
-        'Profile',
-        'Updates',
-      ],
+
+      promptA: "product photo, beautiful vase, zen garden, still life, photoreal, bokeh, depth of field, calming",
+      promptB: "renaissance painting, beautiful vase, zen garden, still life, photoreal, bokeh, depth of field, calming",
+      prompt_blend: 0.5,
+
+      seed:42,
       width: { label: 'width', val: 512, color: 'blue lighten-1'},
       height: { label: 'height', val: 512, color: 'blue lighten-1'},
       scale: { label: 'scale', val: 7, color: 'blue lighten-1' },
       steps: { label: 'steps', val: 25, color: 'blue lighten-1' },
+      num_of_images: 1,
     }),
-    created() {
+    mounted() {
       window.addEventListener("resize", this.onWindowResize);
+      const loadHistoryOptions = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                username: '',
+            })
+        };
+      fetch(this.api_server + '/load_history/', loadHistoryOptions)
+        .then(response => response.json())
+        .then(data => {
+          if (data.result == 'OK') {
+            data.prompts.forEach(prompt=> {
+              this.image_history.push( {
+                  prompt_id: prompt.prompt_id,
+                  settings: {
+                    seed: prompt.seed,
+                    width: prompt.width,
+                    height: prompt.height,
+                    scale: prompt.scale,
+                    steps: prompt.steps,
+                    prompt : prompt.prompt,
+                    prompt_id: prompt.prompt_id,
+                    saved: prompt.saved,
+                    status: prompt.status,
+                    mode: prompt.mode,
+                  }
+                });
+            })
+          }
+      });
     },
     destroyed() {
       window.removeEventListener("resize", this.onWindowResize);
     },
     watch :{
-      seed:{
-        immediate: true,
-        handler(){
-          this.last_prompt = ''
-        }
-      },
-      lock_seed:{
-        immediate: true,
-        handler(){
-          this.last_prompt = ''
-        }
-      }
+
     },
     methods: {
+      show_image (settings, url) {
+        
+        this.seed = settings.seed;
+        this.width.val = settings.width;
+        this.height.val = settings.height;
+        this.steps.val = settings.steps;
+        this.scale.val = settings.scale;
+        this.selected_image_id = settings.prompt_id;
+        this.selected_image_saved = settings.saved;
+        this.current_mode = settings.mode;
+        if(settings.mode == 'List -> Image'){
+          this.promptA = settings.prompt[0].text;
+          this.promptB = settings.prompt[1].text;
+          this.prompt_blend = settings.prompt[1].weight;
+        } else {
+          this.prompt = settings.prompt;
+        }
+
+        var display_image = document.getElementById('display_image')
+        if(display_image != null){
+          display_image.setAttribute('src', url)
+          this.onWindowResize()
+        } else {
+          document.querySelector('#imgcontainer').innerHTML = ''
+          let img = document.createElement('img')
+          img.id = "display_image"
+          var downloadingImage = new Image();
+          downloadingImage.onload = function() {
+            img.src  = url; 
+          }
+          downloadingImage.src = url;
+          document.querySelector('#imgcontainer').appendChild(img)
+
+          this.onWindowResize()
+        }
+      },
       textarea_keypress() {
           this.onGenerate();
       },
-      image_click (event) {
-        var source = event.target || event.srcElement;
-        this.prompt = ''+(source.getAttribute('prompt'));
-        this.seed = parseInt(''+(source.getAttribute('seed')));
-        this.width.val = parseInt(''+(source.getAttribute('gen_width')));
-        this.height.val = parseInt(''+(source.getAttribute('gen_height')));
-        this.steps.val = parseInt(''+(source.getAttribute('gen_steps')));
-        this.scale.val = parseInt(''+(source.getAttribute('gen_scale')));
-        this.selected_image_id = ''+(source.getAttribute('im_id'))
-        var i = 0;
-        for(i; i < this.image_history.length; i++){
-          if(this.selected_image_id == this.image_history[i].id){
-            if(this.image_history[i].saved){
-              this.selected_image_saved = true;
-            } else {
-              this.selected_image_saved = false;
-            }
-            break;
-          }
-        }
 
-        this.lock_seed = true;
-        var display_image = document.getElementById('display_image')
-        display_image.setAttribute('src', source.getAttribute('src'))
-        this.last_prompt = '';
-      },
       onSave(){
         const saveOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-                id: this.selected_image_id,
+                prompt_id: this.selected_image_id,
             })
         };
 
@@ -328,122 +413,125 @@
             .then(response => response.json())
             .then(data => {
                 if (data.result == 'OK') {
-                  
                   var i = 0;
                   for(i; i < this.image_history.length; i++){
-                    if(this.selected_image_id == this.image_history[i].id){
-                      this.image_history[i].saved = true;
+                    if(this.selected_image_id == this.image_history[i].prompt_id){
+                      this.image_history[i].settings.saved = true;
                       break;
                     }
                   }
                   this.selected_image_saved = true;
+                } else if (data.result == "ERR") {
+                  this.warning(data.message);
                 }
             });
       },
       onDelete(){
-        var i = 0;
-        var found = false;
-        for(i; i < this.image_history.length; i++){
-          if(this.selected_image_id == this.image_history[i].id){
-            found = true;
-            break;
-          }
-        }
-        if(found){
-          this.image_history.splice(i, 1);
-          this.selected_image_id = ''
-          this.selected_image_saved = false;
-        }
-      },
-      onExplore(){
-        this.seed = Math.floor(Math.random() * 10000000);
-        //this.onGenerate();
-      },
-      onGenerate(){
-        const renderOptions = {
+        const deleteOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-                prompt: this.prompt,
-                w: this.width.val,
-                h: this.height.val,
-                scale: this.scale.val,
-                steps: this.steps.val,
-                seed: this.seed,
+                prompt_id: this.selected_image_id,
             })
         };
-        fetch(this.api_server + '/submit_prompt/', renderOptions)
-          .then(response => response.json())
-          .then(data => {
-            if(data.result == "OK"){
-              this.seed = data.seed;
-              this.image_id = data.id;
-              this.overlay = true;
-              
-
-              this.progressInterval = setInterval(() => {
-                if (this.progress === 100) {
-                  var checkOptions = {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        prompt_id: this.image_id,
-                    })}
-                  fetch(this.api_server + "/check_prompt/", checkOptions)
-                  .then(response => response.json())
-                  .then(data => {
-                    if(data.result == "OK"){
-                      this.overlay = false
-                      this.progress = 0
-                      clearInterval(this.progressInterval)
-                      var imgUrl = this.api_server + "/download_prompt/?id=" + this.image_id
-                      this.image_history.unshift( {
-                        url : imgUrl,
-                        id: this.image_id,
-                        seed: this.seed,
-                        gen_width: this.width.val,
-                        gen_height: this.height.val,
-                        gen_scale: this.scale.val,
-                        gen_steps: this.steps.val,
-                        prompt : this.prompt,
-                        saved: false,
-                      });
-                      this.selected_image_id = this.image_id;
-                      this.selected_image_saved = false;
-                      document.querySelector('#imgcontainer').innerHTML = ''
-                      
-                      let img = document.createElement('img')
-                      let imgHist = document.createElement('img')
-                      img.id = "display_image"
-                      var downloadingImage = new Image();
-                      downloadingImage.onload = function() {
-                        img.src  = this.src; 
-                        imgHist.src = this.src; 
-                      }
-                      downloadingImage.src = imgUrl;
-                      document.querySelector('#imgcontainer').appendChild(img)
-
+        fetch(this.api_server + '/delete_prompt/', deleteOptions)
+            .then(response => response.json())
+            .then(data => {
+                if (data.result == 'OK') {
+                  var i = 0;
+                  var found = false;
+                  for(i; i < this.image_history.length; i++){
+                    if(this.selected_image_id == this.image_history[i].prompt_id){
+                      found = true;
+                      break;
+                    }
+                  }
+                  if(found){
+                    this.image_history.splice(i, 1);
+                    if(i > 0 && this.image_history.length > 0){
+                      this.selected_image_id = this.image_history[i-1].prompt_id
+                      this.selected_image_saved = this.image_history[i-1].settings.saved;
+                      var display_image = document.getElementById('display_image')
+                      display_image.setAttribute('src', this.api_server + "/download_prompt/?prompt_id=" + this.image_history[i-1].prompt_id)
                       this.onWindowResize()
+                      
 
                     } else {
-                      this.progress = 50
+                      this.selected_image_id = ''
+                      this.selected_image_saved = false;
                     }
-                  });
+                  }
+                } else if (data.result == "ERR") {
+                  this.warning(data.message);
                 }
-                this.progress += 10
-              }, 750);
-            } else if (data.result == "ERROR") {
-              this.warning(data.message);
-            }
-            console.log(data);
-          });
-          
+            });
+
+        
+      },
+      onExplore(){
+        this.seed = Math.floor(Math.random() * 10000000);
+        this.onGenerate();
+      },
+      onGenerate(){
+
+        for(var i=0; i < this.num_of_images; i++){
+          const seed_number = this.seed + i + i * Math.floor(Math.random() * 100000);
+          const prompt_value = this.current_mode == 'List -> Image'? 
+                    [{
+                      text: this.promptA,
+                      weight: 1.0 - this.prompt_blend,
+                    },{
+                      text: this.promptB,
+                      weight: this.prompt_blend
+                    }] : this.prompt
+
+          fetch(this.api_server + '/submit_prompt/', {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    prompt: prompt_value,
+                    w: this.width.val,
+                    h: this.height.val,
+                    scale: this.scale.val,
+                    steps: this.steps.val,
+                    seed: seed_number,
+                    mode: this.current_mode,
+                })
+            } )
+            .then(response => response.json())
+            .then(data => {
+              if(data.result == "OK"){
+                this.image_history.push( {
+                  prompt_id: data.prompt_id,
+                  settings: {
+                    seed: seed_number,
+                    width: this.width.val,
+                    height: this.height.val,
+                    scale: this.scale.val,
+                    steps: this.steps.val,
+                    prompt : prompt_value,
+                    saved: false,
+                    mode: this.current_mode,
+                    status: 0,
+                    prompt_id: data.prompt_id,
+                  }
+                });
+              } else if (data.result == "ERR") {
+                this.warning(data.message);
+              }
+              console.log(data);
+            });
+        }
+        this.num_of_images = 1
       },
       onWindowResize(){
         var container = document.querySelector('#imgcontainer');
         var image_container = document.querySelector('#main');
         var width = image_container.offsetWidth;
         var height = window.innerHeight-90;
+        if(this.current_mode == 'List -> Image'){
+          height = window.innerHeight-135;
+        } 
 
         container.style.width = width + "px";
         container.style.height = height + "px";

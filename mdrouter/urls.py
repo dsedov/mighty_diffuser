@@ -25,10 +25,15 @@ urlpatterns = [
     path('register_node/', mdrouter_views.register_node),
     path('ping_node/', mdrouter_views.ping_node),
 
+    path('load_history/', mdrouter_views.load_history),
+
     path('submit_prompt/', mdrouter_views.submit_prompt),
     path('check_prompt/', mdrouter_views.check_prompt),
     path('download_prompt/',mdrouter_views.download_prompt),
     path('save_prompt/',mdrouter_views.save_prompt), 
+    path('delete_prompt/',mdrouter_views.delete_prompt), 
+
+    path('clear_cache_/',mdrouter_views.clear_cache)
 
 ]
 
