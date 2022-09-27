@@ -8,7 +8,7 @@ class Node(models.Model):
     last_access = models.DateTimeField()
 
 class User(models.Model):
-    username = models.CharField(max_length=64)
+    username = models.CharField(max_length=64, unique=True)
 
 class File(models.Model):
     location = models.CharField(max_length=512)
@@ -23,6 +23,8 @@ class Prompt(models.Model):
     steps = models.IntegerField(default=25)
     scale = models.FloatField(default=7.0)
     seed = models.IntegerField(default=42)
+
+    mode = models.CharField(default='Text -> Image', max_length=128)
 
     init_image = models.ForeignKey(File, null=True, on_delete=models.SET_NULL, related_name='init_image')
     init_mask = models.ForeignKey(File, null=True, on_delete=models.SET_NULL, related_name='init_mask')

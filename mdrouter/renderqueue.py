@@ -1,17 +1,20 @@
 from time import sleep
 import threading, requests, json, io
 from PIL import Image
-from .models import Prompt, Node
+from .models import Prompt, Node, File
 from datetime import datetime, timedelta
-import pytz
+import pytz, uuid, re
+from django.apps import apps
 class RenderQueue():
     def __init__(self):
         print("- Starting Render Queue") 
         self.lock = threading.Lock()
-    
+    def sanitize_file_name(name):
+        name = re.sub(r'[^a-z_A-Z0-9]', '', name.replace(' ', '_'))
+        return name.lower()
     def render(self, prompt, node):  
         r = requests.post(f"http://{node.address}/nodes/txt2img/", json={
-            'prompt' : prompt.prompt,
+            'prompt' : json.loads(prompt.prompt),
             'width' : prompt.width,
             'height' : prompt.height,
             'scale' : prompt.scale,
@@ -20,15 +23,24 @@ class RenderQueue():
             'safety' : prompt.safety
         })
         if r.status_code == 200:
-            print(r.headers)
-            filename = r.headers["filename"]
+            appConfig = apps.get_app_config('mdrouter')
+            storage_root = appConfig.server_config["server"]["storage"]
+
             image_bytes = io.BytesIO(r.content)
             img = Image.open(image_bytes)
-            img.show()
-            node.busy = False 
-            node.save()
+            truncated_prompt = (prompt.prompt[:100] + '..') if len(prompt.prompt) > 100 else prompt.prompt
+            file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
+            file_location = f"{storage_root}/storage/{file_name}"
+            img.save(file_location)
+            file_in_db = File(location=file_location)
+            file_in_db.save()
+            prompt.output = file_in_db
             prompt.status = 2
             prompt.save()
+
+            node.busy = False 
+            node.save()
+            
             print("image rendered")
         else:
             print("image failed")

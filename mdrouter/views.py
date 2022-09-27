@@ -7,11 +7,11 @@ from django.http import FileResponse
 from django.apps import apps
 from .models import Node, Prompt, User
 import random, pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid, yaml
 from PIL import Image 
 from mdnode.stable import config
-import json
+import json, os
 import queue
 import threading
 from PIL import Image
@@ -39,6 +39,11 @@ def ok_reply(message=''):
     response_data['result'] = 'OK'
     response_data['message'] = message
     return HttpResponse(json.dumps(response_data), content_type="application/json")
+def error_reply(message=''):
+    response_data = {}
+    response_data['result'] = 'ERR'
+    response_data['message'] = message
+    return HttpResponse(json.dumps(response_data), content_type="application/json")
 def waiting_reply(message=''):
     response_data = {}
     response_data['result'] = 'WAITING'
@@ -49,7 +54,16 @@ def rendering_reply(message=''):
     response_data['result'] = 'RENDERING'
     response_data['message'] = message
     return HttpResponse(json.dumps(response_data), content_type="application/json")
+def get_user(request):
+    # User
+    client_ip = get_client_ip(request)
+    try:
+        user = User.objects.get(username=client_ip)
+    except User.DoesNotExist:
+        user = User(username=client_ip)
+        user.save()
 
+    return user
  
 
 @never_cache
@@ -94,34 +108,60 @@ def ping_node(request):
     response_data['result'] = 'OK'
     return HttpResponse(json.dumps(response_data), content_type="application/json")
 
+@never_cache
+@csrf_exempt
+def load_history(request):
+    user = get_user(request)
+    all_prompts = Prompt.objects.filter(owner=user)
+    response_data = {}
+    response_data['result'] = 'OK'
+    response_data['prompts'] = []
+    for prompt in all_prompts:
+        p = {
+            'prompt_id' : prompt.id,
+            'prompt' : json.loads(prompt.prompt),
 
+            'width' : prompt.width,
+            'height' : prompt.height,
+
+            'steps' : prompt.steps,
+            'scale' : prompt.scale,
+            'seed' : prompt.seed,
+
+            'mode' : prompt.mode,
+
+            'status' : prompt.status,
+            'saved' : prompt.saved,
+        }
+        response_data['prompts'].append(p)
+    return HttpResponse(json.dumps(response_data), content_type="application/json")    
 
 @never_cache
 @csrf_exempt
 def submit_prompt(request):
-    appConfig = apps.get_app_config('mdrouter')
     try:
         data = json.loads(request.body)
 
         # User
-        client_ip = get_client_ip(request)
-        try:
-            user = User.objects.get(username=client_ip)
-        except User.DoesNotExist:
-            user = User(username=client_ip)
-            user.save()
+        user = get_user(request)
 
         # Prompt
-        for k in ['prompt', 'w', 'h', 'steps', 'scale', 'seed']:
+        for k in ['prompt', 'w', 'h', 'steps', 'scale', 'seed', 'mode' ]:
             if k not in data.keys(): return bad_request(f"{k} is missing")
+
+        prompts_in_progress = Prompt.objects.filter(status=0, owner=user).count()
+        if prompts_in_progress >= 5:
+            return bad_request("Too many prompts in the queue. Maximum is 5")
         new_request = Prompt(
             owner=user,
-            prompt=data["prompt"],
+            prompt=json.dumps(data["prompt"]),
             safety=True,
             width=int(data['w']),
             height=int(data['h']),
             steps=int(data['steps']),
             scale=float(data['scale']),
+            seed=int(data['seed']),
+            mode=data['mode'],
             added_date=datetime.now(pytz.timezone("America/Los_Angeles"))
         )
         new_request.save()
@@ -129,6 +169,7 @@ def submit_prompt(request):
         response_data = {}
         response_data['result'] = 'OK'
         response_data['prompt_id'] = new_request.id
+ 
         return HttpResponse(json.dumps(response_data), content_type="application/json")
     except:
         return bad_request('no json data found')
@@ -136,7 +177,7 @@ def submit_prompt(request):
 @never_cache
 @csrf_exempt
 def check_prompt(request):
-    appConfig = apps.get_app_config('mdrouter')
+
     try:
         data = json.loads(request.body)
         if 'prompt_id' not in data.keys(): return bad_request('prompt_id is missing')
@@ -154,22 +195,29 @@ def check_prompt(request):
     except:
         return bad_request('no json data found')
 
-@never_cache
+
 @csrf_exempt
 def download_prompt(request):
-    appConfig = apps.get_app_config('mdrouter')
-    id_value = request.GET['id']
-    job = appConfig.global_queue.get_job(id_value)
+    id_value = request.GET['prompt_id']
+    try:
+        prompt = Prompt.objects.get(id=id_value)
+        if prompt.status == 2:
+            output_file = prompt.output
+            
+            response = HttpResponse(content_type='image/png')   
+            response['Content-Disposition'] = f"attachment; filename=\"{output_file.location}\""
+            img = Image.open(output_file.location)
+            img.save(response, "PNG")
+            return response
 
-    response = HttpResponse(content_type='image/png')   
-    response['Content-Disposition'] = f"attachment; filename=\"{sanitize_file_name(job.prompt)}_{job.settings.seed}.png\""
-    job.images[0].save(response, "PNG")
-    return response
+        else:
+            return bad_request('prompt is not ready')
+    except Prompt.DoesNotExist:
+        return bad_request('prompt does not exist')
 
-from pathlib import Path
+  
 @csrf_exempt
 def save_prompt(request):
-    appConfig = apps.get_app_config('mdrouter')
     data = json.loads(request.body)
     if 'prompt_id' not in data.keys(): return bad_request('prompt_id is missing')
 
@@ -181,5 +229,40 @@ def save_prompt(request):
     except Prompt.DoesNotExist:
         return bad_request("prompt does not exist")
 
+@csrf_exempt
+def delete_prompt(request):
+    data = json.loads(request.body)
+    if 'prompt_id' not in data.keys(): return error_reply('prompt_id is missing')
 
+    try:
+        prompt = Prompt.objects.get(id=data['prompt_id'])
+        prompt.saved = True
+        output_file = prompt.output
+        os.remove(output_file.location)
+        output_file.delete()
+        prompt.delete()
+        return ok_reply()
+    except Prompt.DoesNotExist:
+        return bad_request("prompt does not exist")
 
+@never_cache
+@csrf_exempt
+def clear_cache(request):
+    # Delete failed jobs
+    print("Searching for failed prompts")
+    time_threshold = datetime.now(pytz.timezone("America/Los_Angeles")) - timedelta(minutes=10)
+    failed_prompts = Prompt.objects.filter(added_date__lt=time_threshold).exclude(status=2)
+    for p in failed_prompts:
+    
+        print(f"Deleted: {p.id} - {p.prompt} - {p.status}")
+        p.delete()
+    # Delete jobs with no output
+    print("Searching for prompts without output")
+    no_outputs_prompts = Prompt.objects.filter(added_date__lt=time_threshold, output__isnull=True)
+    for p in no_outputs_prompts:
+    
+        print(f"Deleted: {p.id} - {p.prompt} - {p.status}")
+        p.delete()
+
+    print("clearing")
+    return ok_reply()
