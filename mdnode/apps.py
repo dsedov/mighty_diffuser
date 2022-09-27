@@ -31,7 +31,11 @@ class MdnodeConfig(AppConfig):
                 print("timed out")
             sleep(5)
     def ready(self):
+        os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
+        os.environ["CUDA_VISIBLE_DEVICES"]=self.server_config["stable_diffusion"]["gpu_num"]
+        
         if os.environ.get('RUN_MAIN', None) == 'true':
+            print("-- using GPU:" + self.server_config["stable_diffusion"]["gpu_num"])
             print("Checking MD Node...")
             if(self.server_config["server"]["mode"] == 'node'):
                 print("Starting MD Node")
