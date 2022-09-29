@@ -75,31 +75,36 @@ def img2img(request):
     appConfig = apps.get_app_config('mdnode')
     new_config = config()
     new_config.plms = False
-    new_config.config = cfg.config
-    new_config.ckpt = cfg.ckpt
+    new_config.config = appConfig.server_config["stable_diffusion"]["config"]
+    new_config.ckpt = appConfig.server_config["stable_diffusion"]["checkpoint"]
     new_config.safety_filter = True
     new_config.seed = random.randint(0, 2**32)
     new_config.init_img_strength = 0.5
+
     if request.method == 'POST' and request.FILES['image']:
         img = Image.open(request.FILES['image'])
         if 'mask' in request.FILES.keys():
             img_mask = Image.open(request.FILES['mask'])
             new_config.init_img_mask_data = img_mask
         new_config.init_img_data = img
+        print(request.POST.keys())
         prompt_value = request.POST['prompt']
         try:
             if 'scale' in request.POST.keys():
-                new_config.scale = int(request.POST['scale'])
-            if 'w' in request.POST.keys():
-                new_config.W = int(request.POST['w'])
-            if 'h' in request.POST.keys():
-                new_config.H = int(request.POST['h'])
-            if 'strength' in request.POST.keys():
-                new_config.init_img_strength = int(request.POST['strength'])
+                new_config.scale = float(request.POST['scale'])
+            if 'width' in request.POST.keys():
+                new_config.W = int(request.POST['width']) 
+            if 'height' in request.POST.keys():
+                new_config.H = int(request.POST['height']) 
             if 'steps' in request.POST.keys():
                 new_config.ddim_steps = int(request.POST['steps'])
             if 'seed' in request.POST.keys():
                 new_config.seed = int(request.POST['seed'])
+            if 'safety' in request.POST.keys():
+                new_config.safety_filter = Boolean(request.POST['safety'])
+            if 'init_strength' in request.POST.keys():
+                new_config.init_img_strength = 1.0 - float(request.POST['init_strength'])
+
         except:
             print("ERROR")
 

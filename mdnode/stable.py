@@ -211,6 +211,8 @@ def generate(opt, prompt, model, device='cuda'):
             assert os.path.isfile(opt.init_img)
         if opt.init_img_mask_data != None:
             prepared_mask = prepare_mask(opt.init_img_mask_data)
+        else: 
+            prepared_mask = None
         
         init_image = load_img(opt).to(device)
         init_image = init_image.half()
