@@ -12,42 +12,87 @@ class RenderQueue():
     def sanitize_file_name(name):
         name = re.sub(r'[^a-z_A-Z0-9]', '', name.replace(' ', '_'))
         return name.lower()
-    def render(self, prompt, node):  
-        r = requests.post(f"http://{node.address}/nodes/txt2img/", json={
-            'prompt' : json.loads(prompt.prompt),
-            'width' : prompt.width,
-            'height' : prompt.height,
-            'scale' : prompt.scale,
-            'seed' : prompt.seed,
-            'steps' : prompt.steps,
-            'safety' : prompt.safety
-        })
-        if r.status_code == 200:
-            appConfig = apps.get_app_config('mdrouter')
-            storage_root = appConfig.server_config["server"]["storage"]
+    def render(self, prompt, node): 
+        print(f"Prompt mode: {prompt.mode}")
+        if prompt.mode == '0' or prompt.mode == '1': 
+            r = requests.post(f"http://{node.address}/nodes/txt2img/", json={
+                'prompt' : json.loads(prompt.prompt),
+                'width' : prompt.width,
+                'height' : prompt.height,
+                'scale' : prompt.scale,
+                'seed' : prompt.seed,
+                'steps' : prompt.steps,
+                'safety' : prompt.safety
+            })
+            if r.status_code == 200:
+                appConfig = apps.get_app_config('mdrouter')
+                storage_root = appConfig.server_config["server"]["storage"]
 
-            image_bytes = io.BytesIO(r.content)
-            img = Image.open(image_bytes)
-            truncated_prompt = (prompt.prompt[:100] + '..') if len(prompt.prompt) > 100 else prompt.prompt
-            file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
-            file_location = f"{storage_root}/storage/{file_name}"
-            img.save(file_location)
-            file_in_db = File(location=file_location)
-            file_in_db.save()
-            prompt.output = file_in_db
-            prompt.status = 2
-            prompt.save()
+                image_bytes = io.BytesIO(r.content)
+                img = Image.open(image_bytes)
+                truncated_prompt = (prompt.prompt[:100] + '..') if len(prompt.prompt) > 100 else prompt.prompt
+                file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
+                file_location = f"{storage_root}/storage/{file_name}"
+                img.save(file_location)
+                file_in_db = File(
+                    location=file_location,
+                    name=prompt.prompt[:50] + '..'
+                    )
+                file_in_db.save()
+                prompt.output = file_in_db
+                prompt.status = 2
+                prompt.save()
 
-            node.busy = False 
-            node.save()
-            
-            print("image rendered")
-        else:
-            print("image failed")
-            node.busy = True 
-            node.save()
-            prompt.status = 3
-            prompt.save()
+                node.busy = False 
+                node.save()
+                
+                print("image rendered")
+            else:
+                print("image failed")
+                node.busy = True 
+                node.save()
+                prompt.status = 3
+                prompt.save()
+        elif prompt.mode == '2':
+            print("starting img2img")
+            file_location = prompt.init_image.location
+            files = {'image': open(file_location,'rb')}
+            r = requests.post( f"http://{node.address}/nodes/img2img/",files=files, data={
+                'prompt' : json.loads(prompt.prompt),
+                'width' : prompt.width,
+                'height' : prompt.height,
+                'scale' : prompt.scale,
+                'seed' : prompt.seed,
+                'steps' : prompt.steps,
+                'safety' : prompt.safety,
+                'init_strength': prompt.init_strength
+            })
+            if r.status_code == 200:
+                appConfig = apps.get_app_config('mdrouter')
+                storage_root = appConfig.server_config["server"]["storage"]
+
+                image_bytes = io.BytesIO(r.content)
+                img = Image.open(image_bytes)
+                truncated_prompt = (prompt.prompt[:100] + '..') if len(prompt.prompt) > 100 else prompt.prompt
+                file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
+                file_location = f"{storage_root}/storage/{file_name}"
+                img.save(file_location)
+                file_in_db = File(location=file_location)
+                file_in_db.save()
+                prompt.output = file_in_db
+                prompt.status = 2
+                prompt.save()
+
+                node.busy = False 
+                node.save()
+                
+                print("image rendered")
+            else:
+                print("image failed")
+                node.busy = True 
+                node.save()
+                prompt.status = 3
+                prompt.save()
 
     def loop(self):
         print("RQ: Render server started")

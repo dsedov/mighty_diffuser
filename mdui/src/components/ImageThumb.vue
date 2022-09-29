@@ -6,7 +6,7 @@
         <v-progress-circular
             class="ma-4"
             v-if="!ready"
-            :rotate="360"
+            :rotate="0"
             :size="100"
             :width="15"
             :value="progress"
@@ -61,12 +61,12 @@
                                         this.src = imgUrl
                                         this.ready = true
                                     } else {
-                                        this.progress = 50
+                                        this.progress = 80
                                     }
                                 });
                             }
                             this.progress += 1
-                        }, 75);
+                        }, this.settings.gen_time / 100.0);
                     }
                 }
             },

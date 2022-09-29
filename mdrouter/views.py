@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.http import FileResponse
 from django.apps import apps
-from .models import Node, Prompt, User
+from .models import Node, Prompt, User, File
 import random, pytz
 from datetime import datetime, timedelta
 import uuid, yaml
@@ -133,15 +133,60 @@ def load_history(request):
             'status' : prompt.status,
             'saved' : prompt.saved,
         }
+        if prompt.mode == '2':
+            p['init_strength'] = prompt.init_strength
+            p['init_image_id'] = prompt.init_image.id 
+            p['init_image_name'] = prompt.init_image.name
+
         response_data['prompts'].append(p)
     return HttpResponse(json.dumps(response_data), content_type="application/json")    
 
 @never_cache
 @csrf_exempt
 def submit_prompt(request):
+    
     try:
-        data = json.loads(request.body)
+        data_to_process = request.POST['data'] if 'data' in request.POST.keys() else request.body
+        data = json.loads(data_to_process)
+        init_file_in_db = None
+        if 'init_image' in request.FILES.keys():
+            print(request.FILES['init_image'])
+            try:
+                img = Image.open(request.FILES['init_image'])
+            except:
+                return bad_request("image format is not supported.")
 
+            appConfig = apps.get_app_config('mdrouter')
+            storage_root = appConfig.server_config["server"]["storage"]
+
+            prompt_ar = data['w'] / data['h']
+            init_ar = img.size[0] / img.size[1]
+            
+            if prompt_ar > init_ar:
+                v_offset = int((img.size[1] - img.size[0]/prompt_ar) /2)
+                img = img.crop((0,v_offset, img.size[0], v_offset + img.size[0]/prompt_ar))
+            else:
+                h_offset = int((img.size[0] - img.size[1]/prompt_ar) /2)
+                img = img.crop((h_offset,0,h_offset + img.size[1]/prompt_ar , img.size[1]))
+            
+
+            if prompt_ar > 1.0:
+                target_width = 512 * prompt_ar
+                target_width = int(target_width - (target_width % 64))
+                target_height = 512
+                img = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
+            else:
+                target_height = 512 / prompt_ar
+                target_height = int(target_height - (target_height % 64))
+                target_width = 512
+                img = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
+            init_image_location = f"{storage_root}/inits/{str(uuid.uuid4())}.png"
+            img.save(init_image_location)
+            init_file_in_db = File(
+                location=init_image_location,
+                name=str(request.FILES['init_image'])
+                )
+ 
         # User
         user = get_user(request)
 
@@ -164,11 +209,22 @@ def submit_prompt(request):
             mode=data['mode'],
             added_date=datetime.now(pytz.timezone("America/Los_Angeles"))
         )
+        if init_file_in_db is not None:
+            init_file_in_db.save()
+            new_request.init_strength = 0.5
+            new_request.init_image = init_file_in_db
+        if 'init_strength' in data.keys():
+            new_request.init_strength = float(data['init_strength'])
+
         new_request.save()
 
         response_data = {}
         response_data['result'] = 'OK'
         response_data['prompt_id'] = new_request.id
+        if init_file_in_db is not None:
+            response_data['init_image_id'] = init_file_in_db.id
+            response_data['init_image_name'] = init_file_in_db.name
+
  
         return HttpResponse(json.dumps(response_data), content_type="application/json")
     except:
