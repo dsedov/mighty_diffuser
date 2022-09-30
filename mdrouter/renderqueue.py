@@ -34,11 +34,12 @@ class RenderQueue():
                 file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
                 file_location = f"{storage_root}/storage/{file_name}"
                 img.save(file_location)
-                file_in_db = File(
-                    location=file_location,
-                    name=prompt.prompt[:50] + '..'
-                    )
+                
+                file_in_db = prompt.output
+                file_in_db.location=file_location
+                file_in_db.name=prompt.prompt[1:50] + '..'
                 file_in_db.save()
+
                 prompt.output = file_in_db
                 prompt.status = 2
                 prompt.save()
@@ -77,7 +78,9 @@ class RenderQueue():
                 file_name = f"{RenderQueue.sanitize_file_name(truncated_prompt)}_{int(prompt.seed)}_{str(uuid.uuid4())}.png"
                 file_location = f"{storage_root}/storage/{file_name}"
                 img.save(file_location)
-                file_in_db = File(location=file_location)
+                file_in_db = prompt.output
+                file_in_db.location=file_location
+                file_in_db.name=prompt.prompt[1:50] + '..'
                 file_in_db.save()
                 prompt.output = file_in_db
                 prompt.status = 2

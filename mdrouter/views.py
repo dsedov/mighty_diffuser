@@ -132,8 +132,17 @@ def load_history(request):
 
             'status' : prompt.status,
             'saved' : prompt.saved,
+
+            'output_image_id' : prompt.output.id,
+            'output_image_name' : prompt.output.name,
+
+            'init_strength' : 0.5,
         }
-        if prompt.mode == '2':
+        if prompt.mode == '0' or prompt.mode == '1':
+            p['init_strength'] = 0.5
+            p['init_image_id'] = prompt.output.id 
+            p['init_image_name'] = prompt.output.name
+        elif prompt.mode == '2':
             p['init_strength'] = prompt.init_strength
             p['init_image_id'] = prompt.init_image.id 
             p['init_image_name'] = prompt.init_image.name
@@ -150,7 +159,7 @@ def submit_prompt(request):
         data = json.loads(data_to_process)
         init_file_in_db = None
         if 'init_image' in request.FILES.keys():
-            print(request.FILES['init_image'])
+            print("Init image with attachment")
             try:
                 img = Image.open(request.FILES['init_image'])
             except:
@@ -159,34 +168,74 @@ def submit_prompt(request):
             appConfig = apps.get_app_config('mdrouter')
             storage_root = appConfig.server_config["server"]["storage"]
 
-            prompt_ar = data['w'] / data['h']
-            init_ar = img.size[0] / img.size[1]
-            
-            if prompt_ar > init_ar:
-                v_offset = int((img.size[1] - img.size[0]/prompt_ar) /2)
-                img = img.crop((0,v_offset, img.size[0], v_offset + img.size[0]/prompt_ar))
-            else:
-                h_offset = int((img.size[0] - img.size[1]/prompt_ar) /2)
-                img = img.crop((h_offset,0,h_offset + img.size[1]/prompt_ar , img.size[1]))
-            
+            init_width = img.size[0]
+            init_height = img.size[1]
+            prompt_width = data['w']
+            prompt_height = data['h']
+            prompt_ar = float(data['w']) / float(data['h'])
+            init_ar = img.size[0] / float(img.size[1])
 
-            if prompt_ar > 1.0:
-                target_width = 512 * prompt_ar
-                target_width = int(target_width - (target_width % 64))
-                target_height = 512
-                img = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
+            if init_ar > prompt_ar:
+                # crop the left and right edges:
+                new_width = int(prompt_ar * init_height)
+                offset = (init_width - new_width) / 2
+                resize = (offset, 0, init_width - offset, init_height)
             else:
-                target_height = 512 / prompt_ar
-                target_height = int(target_height - (target_height % 64))
-                target_width = 512
-                img = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
+                # crop the top and bottom:
+                new_height = int(init_width / prompt_ar)
+                offset = (init_height - new_height) / 2
+                resize = (0, offset, init_width, init_height - offset)
+            img = img.crop(resize).resize((prompt_width, prompt_height), Image.Resampling.BICUBIC)
+
             init_image_location = f"{storage_root}/inits/{str(uuid.uuid4())}.png"
             img.save(init_image_location)
             init_file_in_db = File(
                 location=init_image_location,
                 name=str(request.FILES['init_image'])
                 )
- 
+        elif 'init_image_id' in data.keys():
+            print(f"Init image with existing image {data['init_image_id']}")
+            try:
+                img_object = File.objects.get(id=int(data['init_image_id']))
+                img = Image.open(img_object.location)
+                init_width = img.size[0]
+                init_height = img.size[1]
+                prompt_width = data['w']
+                prompt_height = data['h']
+
+                if img.size[0] != data['w'] or img.size[1] != data['h']:
+                    appConfig = apps.get_app_config('mdrouter')
+                    storage_root = appConfig.server_config["server"]["storage"]
+                    
+                    prompt_ar = float(data['w']) / float(data['h'])
+                    init_ar = img.size[0] / float(img.size[1])
+                    
+                    if init_ar > prompt_ar:
+                        # crop the left and right edges:
+                        new_width = int(prompt_ar * init_height)
+                        offset = (init_width - new_width) / 2
+                        resize = (offset, 0, init_width - offset, init_height)
+                    else:
+                        # crop the top and bottom:
+                        new_height = int(init_width / prompt_ar)
+                        offset = (init_height - new_height) / 2
+                        resize = (0, offset, init_width, init_height - offset)
+                    img = img.crop(resize).resize((prompt_width, prompt_height), Image.Resampling.BICUBIC)
+
+                    init_image_location = f"{storage_root}/inits/{str(uuid.uuid4())}.png"
+                    img.save(init_image_location)
+                    init_file_in_db = File(
+                        location=init_image_location,
+                        name=img_object.name
+                        )
+                else:
+                    init_file_in_db = img_object
+            except File.DoesNotExist:
+                return bad_request('Init file was not found in the database')
+            except FileNotFoundError:
+                return bad_request('Physical init file was not found on the server')
+        
+        print("Continue prompt submission")
         # User
         user = get_user(request)
 
@@ -216,16 +265,23 @@ def submit_prompt(request):
         if 'init_strength' in data.keys():
             new_request.init_strength = float(data['init_strength'])
 
+        new_output_target = File(location='')
+        new_output_target.save()
+        new_request.output = new_output_target
         new_request.save()
 
         response_data = {}
         response_data['result'] = 'OK'
         response_data['prompt_id'] = new_request.id
+        response_data['output_image_id'] = new_output_target.id
+        response_data['output_image_name'] = new_request.prompt[1:50] + '..'
+        response_data['init_image_id'] = new_output_target.id
+        response_data['init_image_name'] = new_request.prompt[1:50] + '..'
         if init_file_in_db is not None:
             response_data['init_image_id'] = init_file_in_db.id
             response_data['init_image_name'] = init_file_in_db.name
 
- 
+
         return HttpResponse(json.dumps(response_data), content_type="application/json")
     except:
         return bad_request('no json data found')
@@ -292,10 +348,20 @@ def delete_prompt(request):
 
     try:
         prompt = Prompt.objects.get(id=data['prompt_id'])
-        prompt.saved = True
+        
+        # Clear output file
         output_file = prompt.output
-        os.remove(output_file.location)
-        output_file.delete()
+        if Prompt.objects.filter(init_image=output_file).count() == 0:
+            os.remove(output_file.location)
+            output_file.delete()
+
+        # Clear init file
+        if prompt.init_image != None:
+            init_image = prompt.init_image
+            if Prompt.objects.filter(init_image=init_image).exclude(id=prompt.id).count() == 0:
+                os.remove(init_image.location)
+                init_image.delete()
+
         prompt.delete()
         return ok_reply()
     except Prompt.DoesNotExist:

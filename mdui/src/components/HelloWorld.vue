@@ -121,24 +121,39 @@
               v-if="possible_modes[current_mode] == 'List -> Image'"
               class="ml-4 mr-4"
               v-model="prompt_blend"
-              :min="0.0"
-              :max="1.0"
+              :min="0.01"
+              :max="0.99"
               :step="0.01"
               hide-details
               ></v-slider>
+            <div class="mt-4" v-if="possible_modes[current_mode] == 'Image -> Image'">
+              <FileDragDrop v-if="init_image_id < 0" @file_added="file_added"></FileDragDrop>
+              
+              <v-sheet 
+                v-if="init_image_id >= 0"
+                style="background-color: #1B5E20"  class="ml-4 mr-4 mb-4 pa-2 rounded d-flex justify-space-between">
+                {{init_image_name}}
+                <v-btn icon x-small @click="init_image_id=-1"><v-icon style="color:white!important">mdi-close</v-icon></v-btn>
+              </v-sheet>
 
-            <v-subheader v-if="possible_modes[current_mode] == 'Image -> Image'" >
-              Init Weight :{{init_strength}}
+              <v-btn 
+                v-if="output_image_id > 0 && init_image_id < 0"
+                class="ml-4"
+                @click="init_image_name = output_image_name;init_image_id = output_image_id; "
+                >Reuse output image</v-btn>
+            </div>
+            
+            <v-subheader class="d-flex justify-space-between" v-if="possible_modes[current_mode] == 'Image -> Image'" >
+              <span class="text-left" :style="{'opacity' : 1.0 - init_strength}">Prompt</span> {{init_strength}} <span class="text-right" :style="{'opacity' : init_strength}">Image</span>
             </v-subheader>
             <v-slider 
               v-if="possible_modes[current_mode] == 'Image -> Image'" 
               class="ml-4 mr-4"
               v-model="init_strength"
               thumb-color="blue lighten-1"
-              :min="0"
+              :min="0.01"
               :step="0.01"
-              :max="1"
-              thumb-label
+              :max="0.99"
               prepend-icon="mdi-weight"
               ></v-slider>
 
@@ -154,15 +169,17 @@
               :min="1"
               :max="4"
               thumb-label
+              hint="Number of images to generate at once"
               prepend-icon="mdi-animation-outline"
               ></v-slider>  
-            <v-subheader>Seed number</v-subheader>
+
             <v-text-field
-              class="ml-4 mr-4"
-              solo
+              class="ml-4 mr-4 mt-6"
+              outlined
               flat
               dense
               label="seed"
+              hint="Seed number changes composition of final image"
               v-model="seed"
             ></v-text-field>
      
@@ -188,7 +205,6 @@
                   @click="onGenerate"
             >render</v-btn>
     </v-navigation-drawer>
-    
     <v-footer v-if="possible_modes[current_mode] == 'Text -> Image'" fixed app color="transparent" height="140" inset class="pl-0 pr-0">
       <v-container>
         <v-row>
@@ -198,7 +214,6 @@
               label="Prompt"
               outlined
               rows="3"
-              
               flat
               dense
               @keydown.enter.exact.prevent="textarea_keypress"
@@ -207,8 +222,7 @@
             </v-col>
         </v-row>
       </v-container>
-    </v-footer>
-    
+    </v-footer> 
     <v-footer v-if="possible_modes[current_mode] == 'List -> Image'" fixed app color="transparent" height="140" inset class="pa-0">
       <v-container>
         <v-row>
@@ -243,27 +257,21 @@
         </v-row>
       </v-container>
     </v-footer>
-
-    <v-footer v-if="possible_modes[current_mode] == 'Image -> Image'" fixed app color="transparent" height="135" inset class="pl-0 pr-0">
+    <v-footer v-if="possible_modes[current_mode] == 'Image -> Image'" fixed app color="transparent" height="140" inset class="pl-0 pr-0">
       <v-container>
         <v-row>
-          <v-col class="ma-0 pa-0">
-            <FileDragDrop v-if="init_image_type == 'none'" @file_added="file_added"></FileDragDrop>
-          </v-col>
-        </v-row>
-        <v-row>
-          <v-col  class="ma-0 pa-0">
+          <v-col class="ma-0 pa-0" style="margin-top:6px!important">
             <v-textarea
-              class="ml-4 mr-4"
-              filled
-              rows="1"
-              solo
+              class="ml-4 mr-4 text2image"
+              label="Prompt"
+              outlined
+              rows="3"
               flat
               dense
-              hide-details
+              @keydown.enter.exact.prevent="textarea_keypress"
               v-model="prompt"
               ></v-textarea>
-          </v-col>
+            </v-col>
         </v-row>
       </v-container>
     </v-footer> 
@@ -392,8 +400,10 @@
       selected_image_saved:false,
 
       init_image_type: 'none',
-      init_image_id: 0,
+      init_image_id: -1,
       init_image_name: 'none',
+      output_image_id: -1,
+      output_image_name: 'none',
 
       promptA: "product photo, beautiful vase, zen garden, still life, photoreal, bokeh, depth of field, calming",
       promptB: "renaissance painting, beautiful vase, zen garden, still life, photoreal, bokeh, depth of field, calming",
@@ -438,6 +448,8 @@
                     init_image_id : prompt.init_image_id,
                     init_image_name : prompt.init_image_name,
                     init_strength : prompt.init_strength,
+                    output_image_id : prompt.output_image_id,
+                    output_image_name : prompt.output_image_name,
                   }
                 });
             })
@@ -462,7 +474,7 @@
         return total_ms * 1.2
       },
       show_image (settings, url) {
-        
+
         this.seed = settings.seed;
         this.width.val = settings.width;
         this.height.val = settings.height;
@@ -470,7 +482,13 @@
         this.scale.val = settings.scale;
         this.selected_image_id = settings.prompt_id;
         this.selected_image_saved = settings.saved;
-        this.current_mode = settings.mode;
+        this.current_mode = parseInt(settings.mode);
+        this.init_strength = settings.init_strength;
+        this.init_image_id = settings.init_image_id;
+        this.init_image_name = settings.init_image_name;
+        this.output_image_id = settings.output_image_id;
+        this.output_image_name = settings.output_image_name;
+
         if(settings.mode == '1'){
           this.promptA = settings.prompt[0].text;
           this.promptB = settings.prompt[1].text;
@@ -478,6 +496,8 @@
         } else if (settings.mode == '2'){
           this.prompt = settings.prompt;
           this.init_strength = settings.init_strength;
+          this.init_image_id = settings.init_image_id;
+          this.init_image_name = settings.init_image_name;
         } else {
           this.prompt = settings.prompt;
         }
@@ -503,7 +523,6 @@
       textarea_keypress() {
           this.onGenerate();
       },
-
       onSave(){
         const saveOptions = {
             method: "POST",
@@ -590,7 +609,7 @@
                       }] : this.prompt
 
 
-          if(this.current_mode == 2) {
+          if(this.current_mode == 2 && this.init_image_id < 0) {
             const formData = new FormData();
             formData.append( 'init_image', this.files[0], this.files[0].name);
             formData.append( 'data', JSON.stringify({ 
@@ -603,37 +622,83 @@
                       init_strength: this.init_strength,
                       mode: this.current_mode,
                   }))
-              fetch(this.api_server + '/submit_prompt/', {
-                  method: "POST",
-                  body: formData
-              })
-              .then(response => response.json())
-              .then(data => {
-                if(data.result == "OK"){
-                  this.image_history.push( {
+            fetch(this.api_server + '/submit_prompt/', {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+              if(data.result == "OK"){
+                this.image_history.push( {
+                  prompt_id: data.prompt_id,
+                  settings: {
+                    seed: seed_number,
+                    width: this.width.val,
+                    height: this.height.val,
+                    scale: this.scale.val,
+                    steps: this.steps.val,
+                    prompt : prompt_value,
+                    saved: false,
+                    mode: this.current_mode,
+                    init_strength: this.init_strength,
+                    init_image_id : data.init_image_id,
+                    init_image_name : data.init_image_name,
+                    output_image_id : data.output_image_id,
+                    output_image_name : data.output_image_name,
+                    status: 0,
                     prompt_id: data.prompt_id,
-                    settings: {
-                      seed: seed_number,
-                      width: this.width.val,
-                      height: this.height.val,
+                    gen_time: this.time_estimate(this.width.val, this.height.val, this.steps.val)
+                  }
+                });
+              } else if (data.result == "ERR") {
+                this.warning(data.message);
+              }
+              console.log(data);
+            });
+          } else if(this.current_mode == 2 && this.init_image_id > 0) {
+            fetch(this.api_server + '/submit_prompt/', {
+                method: "POST",
+                body: JSON.stringify({ 
+                      prompt: prompt_value,
+                      w: this.width.val,
+                      h: this.height.val,
                       scale: this.scale.val,
                       steps: this.steps.val,
-                      prompt : prompt_value,
-                      saved: false,
-                      mode: this.current_mode,
+                      seed: seed_number,
                       init_strength: this.init_strength,
-                      init_image_id : data.init_image_id,
-                      init_image_name : data.init_image_name,
-                      status: 0,
-                      prompt_id: data.prompt_id,
-                      gen_time: this.time_estimate(this.width.val, this.height.val, this.steps.val)
-                    }
-                  });
-                } else if (data.result == "ERR") {
-                  this.warning(data.message);
-                }
-                console.log(data);
-              });
+                      init_image_id: this.init_image_id,
+                      mode: this.current_mode,
+                  })
+            })
+            .then(response => response.json())
+            .then(data => {
+              if(data.result == "OK"){
+                this.image_history.push( {
+                  prompt_id: data.prompt_id,
+                  settings: {
+                    seed: seed_number,
+                    width: this.width.val,
+                    height: this.height.val,
+                    scale: this.scale.val,
+                    steps: this.steps.val,
+                    prompt : prompt_value,
+                    saved: false,
+                    mode: this.current_mode,
+                    init_strength: this.init_strength,
+                    init_image_id : data.init_image_id,
+                    init_image_name : data.init_image_name,
+                    output_image_id : data.output_image_id,
+                    output_image_name : data.output_image_name,
+                    status: 0,
+                    prompt_id: data.prompt_id,
+                    gen_time: this.time_estimate(this.width.val, this.height.val, this.steps.val)
+                  }
+                });
+              } else if (data.result == "ERR") {
+                this.warning(data.message);
+              }
+              console.log(data);
+            });
           } else {
             fetch(this.api_server + '/submit_prompt/', {
                   method: "POST",
@@ -665,6 +730,11 @@
                     mode: this.current_mode,
                     status: 0,
                     prompt_id: data.prompt_id,
+                    init_strength: 0.5,
+                    init_image_id: data.init_image_id,
+                    init_image_name: data.init_image_name,
+                    output_image_id : data.output_image_id,
+                    output_image_name : data.output_image_name,
                     gen_time: this.time_estimate(this.width.val, this.height.val, this.steps.val)
                   }
                 });

@@ -1,8 +1,16 @@
 <template>
     <form ref="fileform">
-        <v-sheet v-if="files.length == 0" :style="[highlighted ? {'background-color': '#6A1B9A'} : {'background-color' : '#212121'}]" class="ml-4 mr-4 mb-4 pa-2 rounded">Drag and drop file here</v-sheet>
-        <v-sheet v-if="files.length == 1" style="background-color: #0D47A1"  class="ml-4 mr-4 mb-4 pa-2 rounded">
+        <v-sheet 
+            v-if="files.length == 0" 
+            :style="[highlighted ? {'background-color': '#1B5E20'} : {'background-color' : '#E65100'}]" 
+            class="ml-4 mr-4 mb-4 pa-2 rounded d-flex justify-space-between">
+            Drop image here
+        </v-sheet>
+        <v-sheet 
+            v-if="files.length == 1" 
+            style="background-color: #1B5E20"  class="ml-4 mr-4 mb-4 pa-2 rounded d-flex justify-space-between">
             {{files[0].name}}
+            <v-btn icon x-small @click="files=[]"><v-icon style="color:white!important">mdi-close</v-icon></v-btn>
         </v-sheet>
     </form>
     
@@ -38,6 +46,7 @@
             }.bind(this));
             this.$refs.fileform.addEventListener('drop', function(e){
                 this.highlighted = false;
+                this.files = [];
                 for( let i = 0; i < e.dataTransfer.files.length; i++ ){
                     this.files.push( e.dataTransfer.files[i] );
                 }

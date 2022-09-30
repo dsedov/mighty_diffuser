@@ -24,6 +24,7 @@
             return {
                 ready:false,
                 src: "",
+                output_id: -1,
                 progress: 0,
                 progressInterval: {},
             }
@@ -65,8 +66,8 @@
                                     }
                                 });
                             }
-                            this.progress += 1
-                        }, this.settings.gen_time / 100.0);
+                            this.progress += 5
+                        }, this.settings.gen_time / 20.0);
                     }
                 }
             },
