@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 config.yaml
 
+*.hotupdate.*
 __pycache__/
 *.py[cod]
 *$py.class
