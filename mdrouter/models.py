@@ -12,6 +12,7 @@ class User(models.Model):
 
 class File(models.Model):
     location = models.CharField(max_length=512)
+    name = models.CharField(max_length=128, null=True)
 
 class Prompt(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
