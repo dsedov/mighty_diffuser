@@ -1,18 +1,21 @@
 <template>
   <v-app id="inspire">
-
-
-
-
     <v-navigation-drawer app clipped permanent left width="150px" color="transparent" class="pa-2 invisible-scrollbar">
+      <v-btn-toggle  v-model="work_bench_mode">
+        <v-btn small value="all" style="width:67px;">
+          <span>All</span>
+        </v-btn>
+        <v-btn small value="sav"  style="width:67px;">
+          <span>Saved</span>
+        </v-btn>
+      </v-btn-toggle>
       <v-list class="d-flex flex-column-reverse" ref="history_container" id="historycontainer">
-        <ImageThumb v-for="im in image_history" :key="im.prompt_id"
+        <ImageThumb v-for="im in image_history.filter( i => work_bench_mode == 'all' ? true : i.settings.saved)" :key="im.prompt_id"
           :settings="im.settings" 
           :prompt_id="im.prompt_id"
           :selected="im.prompt_id == selected_image_id"
           @show="show_image"
         ></ImageThumb>
-        
       </v-list>
       <v-btn
         class="ml-4 save_button"
@@ -388,6 +391,7 @@
     },
     data: () => ({
       possible_modes: ['Text -> Image', 'List -> Image', 'Image -> Image'],
+      work_bench_mode: 'all',
       current_mode: 0,
       panels_model: [],
       alert: false,

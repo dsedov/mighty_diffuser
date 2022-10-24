@@ -5,7 +5,7 @@ import VueMeta from 'vue-meta'
 
 Vue.use(VueMeta)
 Vue.config.productionTip = false
-Vue.prototype.api_server = "http://17.185.240.235:8000/router"
+Vue.prototype.api_server = "http://127.0.0.1:8050/router"
 new Vue({
   vuetify,
   render: h => h(App)

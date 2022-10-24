@@ -242,6 +242,10 @@ def submit_prompt(request):
         # Prompt
         for k in ['prompt', 'w', 'h', 'steps', 'scale', 'seed', 'mode' ]:
             if k not in data.keys(): return bad_request(f"{k} is missing")
+        
+        safety = True 
+        if 'safety' in data.keys():
+            safety = data['safety']
 
         prompts_in_progress = Prompt.objects.filter(status=0, owner=user).count()
         if prompts_in_progress >= 5:
@@ -249,7 +253,7 @@ def submit_prompt(request):
         new_request = Prompt(
             owner=user,
             prompt=json.dumps(data["prompt"]),
-            safety=True,
+            safety=safety,
             width=int(data['w']),
             height=int(data['h']),
             steps=int(data['steps']),
